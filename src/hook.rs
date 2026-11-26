@@ -9,6 +9,11 @@ use crate::pace::Pace;
 use crate::state::{State, Window};
 use crate::util::{duration, format_pct, unix_now};
 
+#[cfg(windows)]
+const BORROW_BIN: &str = r"%USERPROFILE%\.claude\headroom\headroom.exe";
+#[cfg(not(windows))]
+const BORROW_BIN: &str = "~/.claude/headroom/headroom";
+
 pub enum Decision {
     Allow,
     Deny(String),
@@ -141,7 +146,7 @@ pub fn prompt(cfg: &Config) -> PromptDecision {
                         };
                         if pace.over {
                             parts.push(format!(
-                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom`",
+                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}`",
                                 pace.day,
                                 pace.week_days,
                                 format_pct(pace.used_bp),
@@ -203,7 +208,7 @@ fn weekly_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "headroom: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom` in a terminal.",
+        "headroom: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}` in a terminal.",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),
@@ -218,7 +223,7 @@ fn block_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "headroom: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom` in a terminal. Raise HEADROOM_DAILY_PERCENT or set HEADROOM_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
+        "headroom: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}` in a terminal. Raise HEADROOM_DAILY_PERCENT or set HEADROOM_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),

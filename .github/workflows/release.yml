@@ -63,7 +63,7 @@ jobs:
           $asset = "headroom-${{ matrix.target }}.zip"
           Compress-Archive -Path "target/${{ matrix.target }}/release/headroom.exe" -DestinationPath "dist/$asset" -Force
           $hash = (Get-FileHash "dist/$asset" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $asset" | Out-File -Encoding ascii "dist/$asset.sha256"
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location) "dist\$asset.sha256"), "$hash  $asset`n", [System.Text.Encoding]::ASCII)
 
       - name: Upload (Unix)
         if: runner.os != 'Windows'

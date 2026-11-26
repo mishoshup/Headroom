@@ -2,6 +2,11 @@
 
 ## CHANGELOG
 
+### 1.1.1 — 2026-11-26
+
+- Windows-specific borrow paths in hook messages.
+- LF checksum files for Windows release assets.
+
 ### 1.1.0 — 2026-11-26
 
 - Native Windows support: `x86_64-pc-windows-msvc` release asset and

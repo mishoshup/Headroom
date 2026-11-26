@@ -11,6 +11,7 @@ Run the installed binary with the user's arguments and report the output verbati
 ```
 
 - No arguments: run `~/.claude/headroom/headroom borrow status`.
+- On Windows, the binary is `%USERPROFILE%\.claude\headroom\headroom.exe`; use that path instead of the tilde path.
 - Examples: `borrow 20`, `borrow 15 --week`, `borrow clear`.
 - The interactive panel is for a real terminal: run `headroom` or
   `headroom borrow` there. Inside Claude Code's Bash tool it prints status.

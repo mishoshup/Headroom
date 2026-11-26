@@ -122,7 +122,7 @@ Options:
 
 The credit is stored in `~/.claude/headroom/credit.json`, keyed to the
 weekly reset and day. Inside Claude Code, `/headroom:borrow 20` and
-`!~/.claude/headroom/headroom borrow 20` provide the same command.
+`!~/.claude/headroom/headroom borrow 20` provide the same command. On Windows, use `%USERPROFILE%\.claude\headroom\headroom.exe borrow 20`.
 
 ## Enforcement
 
@@ -170,7 +170,7 @@ restarted after installation so that the hooks are loaded.
 If a different status line is already configured, the installer leaves it
 untouched. Pass `--force` to replace it.
 
-The binary is installed at `~/.claude/headroom/headroom` and is **not**
+The binary is installed at `~/.claude/headroom/headroom` on macOS/Linux/WSL and `%USERPROFILE%\.claude\headroom\headroom.exe` on Windows; it is **not**
 added to `PATH`. The hooks invoke it by absolute path, and all borrow commands
 in this document use that absolute path.
 
@@ -179,7 +179,7 @@ in this document use that absolute path.
 The same release assets can be installed by a general binary installer:
 
 ```bash
-mise use -g ubi:mishoshup/headroom
+mise use -g github:mishoshup/headroom
 # or, with Rust installed:
 cargo binstall --git https://github.com/mishoshup/headroom
 headroom setup
