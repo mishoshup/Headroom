@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "usage-pacer",
+  "displayName": "Usage Pacer",
+  "description": "Paces Claude Code's weekly subscription usage across the window, with temporary borrow credits for heavy days and a separate 5-hour ceiling. Rendered by a fast native binary with truecolor and adaptive bars.",
+  "version": "1.0.0",
+  "author": {
+    "name": "danialhaikal"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "usage",
+    "pacing",
+    "rate-limit",
+    "statusline"
+  ]
+}

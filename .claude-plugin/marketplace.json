@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "usage-pacer-local",
+  "description": "Local marketplace for usage-pacer",
+  "owner": {
+    "name": "danialhaikal"
+  },
+  "plugins": [
+    {
+      "name": "usage-pacer",
+      "displayName": "Usage Pacer",
+      "description": "Weekly daily-pace ceiling, borrow credits and a 5-hour ceiling for Claude Code subscription usage.",
+      "author": {
+        "name": "danialhaikal"
+      },
+      "category": "productivity",
+      "source": "."
+    }
+  ]
+}
