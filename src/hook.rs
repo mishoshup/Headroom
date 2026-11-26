@@ -141,7 +141,7 @@ pub fn prompt(cfg: &Config) -> PromptDecision {
                         };
                         if pace.over {
                             parts.push(format!(
-                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts)",
+                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer`",
                                 pace.day,
                                 pace.week_days,
                                 format_pct(pace.used_bp),
@@ -203,7 +203,7 @@ fn weekly_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "usage-pacer: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume.",
+        "usage-pacer: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer` in a terminal.",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),
@@ -218,7 +218,7 @@ fn block_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "usage-pacer: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. Borrow more with `usage-pacer borrow <pct>`, raise PACER_DAILY_PERCENT, or set PACER_PACING=off (restart Claude Code after changing the environment).",
+        "usage-pacer: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer` in a terminal. Raise PACER_DAILY_PERCENT or set PACER_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),

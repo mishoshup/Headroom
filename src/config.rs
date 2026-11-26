@@ -37,6 +37,16 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
+        Self::load(true)
+    }
+
+    /// Hooks do not render anything, so skip colour/terminal detection and the
+    /// bottom-margin environment reads on the per-tool-call path.
+    pub fn for_hooks() -> Self {
+        Self::load(false)
+    }
+
+    fn load(render: bool) -> Self {
         let home = env::var_os("HOME")
             .or_else(|| env::var_os("USERPROFILE"))
             .map(PathBuf::from)
@@ -68,10 +78,15 @@ impl Config {
         let daily_bp = env_bp("PACER_DAILY_PERCENT");
         let target_bp = env_bp("PACER_WEEKLY_TARGET").unwrap_or(10_000);
         let grace_bp = env_bp("PACER_PACING_GRACE").unwrap_or(0);
-        let color = detect_color();
-        let ascii = env_bool("PACER_ASCII", false)
-            || env::var("TERM").map(|t| t == "dumb").unwrap_or(false);
-        let bottom_margin = env_u64("PACER_BOTTOM_MARGIN", 1).min(3) as u32;
+        let (color, ascii, bottom_margin) = if render {
+            let color = detect_color();
+            let ascii = env_bool("PACER_ASCII", false)
+                || env::var("TERM").map(|t| t == "dumb").unwrap_or(false);
+            let bottom_margin = env_u64("PACER_BOTTOM_MARGIN", 1).min(3) as u32;
+            (color, ascii, bottom_margin)
+        } else {
+            (ColorMode::None, false, 0)
+        };
 
         Self {
             state,

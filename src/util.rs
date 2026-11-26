@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn unix_now() -> u64 {
@@ -7,39 +8,69 @@ pub fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Basis points -> compact percent text without a 100% clamp, for ratios such
-/// as "107.3% of today's allowance".
-pub fn format_ratio(bp: i64) -> String {
-    let bp = bp.max(0);
+fn write_bp(f: &mut fmt::Formatter<'_>, bp: i64) -> fmt::Result {
     let whole = bp / 100;
     let frac = bp % 100;
     if frac == 0 {
-        format!("{whole}")
+        write!(f, "{whole}")
     } else if frac % 10 == 0 {
-        format!("{whole}.{}", frac / 10)
+        write!(f, "{whole}.{}", frac / 10)
     } else {
-        format!("{whole}.{frac:02}")
+        write!(f, "{whole}.{frac:02}")
     }
+}
+
+/// Percentage clamped to 0..100, formatted without an allocation.
+pub struct Pct(pub i64);
+
+impl fmt::Display for Pct {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_bp(f, self.0.clamp(0, 10_000))
+    }
+}
+
+/// Percentage ratio that may exceed 100 (for "120% of today's allowance").
+pub struct Ratio(pub i64);
+
+impl fmt::Display for Ratio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_bp(f, self.0.max(0))
+    }
+}
+
+/// Seconds -> "1d 5h", "3h 12m", "59m", formatted without an allocation.
+pub struct Duration(pub i64);
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let secs = self.0.max(0);
+        let d = secs / 86_400;
+        let h = (secs % 86_400) / 3_600;
+        let m = (secs % 3_600) / 60;
+        if d > 0 {
+            write!(f, "{d}d {h}h")
+        } else if h > 0 {
+            write!(f, "{h}h {m}m")
+        } else {
+            write!(f, "{m}m")
+        }
+    }
+}
+
+/// Basis points -> compact percent text without a 100% clamp.
+#[cfg(test)]
+pub fn format_ratio(bp: i64) -> String {
+    format!("{}", Ratio(bp))
 }
 
 /// Basis points -> compact percent text. 4286 -> "42.86", 4500 -> "45".
 pub fn format_pct(bp: i64) -> String {
-    format_ratio(bp.clamp(0, 10_000))
+    format!("{}", Pct(bp))
 }
 
 /// Seconds -> "1d 5h", "3h 12m", "59m".
 pub fn duration(secs: i64) -> String {
-    let secs = secs.max(0);
-    let d = secs / 86_400;
-    let h = (secs % 86_400) / 3_600;
-    let m = (secs % 3_600) / 60;
-    if d > 0 {
-        format!("{d}d {h}h")
-    } else if h > 0 {
-        format!("{h}h {m}m")
-    } else {
-        format!("{m}m")
-    }
+    format!("{}", Duration(secs))
 }
 
 /// JSON percentage (f64) -> basis points.
@@ -60,5 +91,11 @@ mod tests {
         assert_eq!(format_ratio(10_730), "107.3");
         assert_eq!(format_ratio(12_000), "120");
         assert_eq!(format_pct(10_730), "100");
+    }
+
+    #[test]
+    fn durations_are_compact() {
+        assert_eq!(duration(90_061), "1d 1h");
+        assert_eq!(duration(3_600), "1h 0m");
     }
 }

@@ -1,6 +1,9 @@
 # usage-pacer
 
-A weekly usage pacer for Claude Code.
+[![CI](https://github.com/mishoshup/cc-usage-pacer/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/cc-usage-pacer/actions/workflows/ci.yml)
+
+A weekly usage pacer for Claude Code, maintained by
+[Mishoshup](https://github.com/mishoshup).
 
 `usage-pacer` enforces a daily share of the weekly subscription allowance and
 reports how much of today's allowance remains. It is a single native Rust
@@ -56,7 +59,8 @@ When a borrow is active, one subordinate row reports it:
 
 ## Interactive panel
 
-Run `usage-pacer` without arguments, or `usage-pacer borrow`, in a terminal.
+Run `~/.claude/usage-pacer/usage-pacer` without arguments, or
+`~/.claude/usage-pacer/usage-pacer borrow`, in a terminal.
 
 ```
 usage-pacer  borrow extra headroom
@@ -142,19 +146,29 @@ Requirements:
 - macOS, Linux, or WSL
 
 ```bash
+claude plugin marketplace add mishoshup/cc-usage-pacer
+claude plugin install usage-pacer@mishoshup
+```
+
+Then run `/usage-pacer:setup` inside Claude Code. For a local checkout:
+
+```bash
 claude plugin marketplace add ~/Developer/usage-pacer
-claude plugin install usage-pacer@usage-pacer-local
+claude plugin install usage-pacer@mishoshup
 bash ~/Developer/usage-pacer/scripts/install.sh
 ```
 
-Alternatively, run `/usage-pacer:setup` inside Claude Code. The installer
-builds the release binary, installs it under `~/.claude/usage-pacer/`, copies
-the hook binary into the plugin directory, takes a timestamped backup of
-`settings.json`, and configures the status line. Claude Code must be
-restarted after installation so that the hooks are loaded.
+The installer builds the release binary, installs it under
+`~/.claude/usage-pacer/`, copies the hook binary into the plugin directory,
+takes a timestamped backup of `settings.json`, and configures the status line.
+Claude Code must be restarted after installation so that the hooks are loaded.
 
 If a different status line is already configured, the installer leaves it
 untouched. Pass `--force` to replace it.
+
+The binary is installed at `~/.claude/usage-pacer/usage-pacer` and is **not**
+added to `PATH`. The hooks invoke it by absolute path, and all borrow commands
+in this document use that absolute path.
 
 ## Configuration
 
@@ -209,7 +223,8 @@ tests/cli.rs     end-to-end behaviour tests
 
 The runtime contract is documented in [docs/CONTRACT.md](docs/CONTRACT.md).
 Architecture decisions are recorded in
-[docs/adr](docs/adr/0001-rust-binary-flat-state.md).
+[docs/adr](docs/adr/0001-rust-binary-flat-state.md), and measured performance in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 Quality gates:
 
@@ -223,6 +238,17 @@ The crate forbids `unsafe` and denies `todo!`, `unimplemented!`, and `dbg!`.
 The minimum supported Rust version is 1.74. CI runs formatting, linting,
 tests, and a release build on every push.
 
+## Uninstall
+
+```bash
+claude plugin uninstall usage-pacer@mishoshup
+claude plugin marketplace remove mishoshup
+rm -rf ~/.claude/usage-pacer
+```
+
+Remove the `statusLine` key from `~/.claude/settings.json` if another status
+line is not configured in its place.
+
 ## Licence
 
-MIT © 2026 danialhaikal
+MIT © 2026 Mishoshup

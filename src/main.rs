@@ -16,17 +16,16 @@ use config::Config;
 use hook::{Decision, PromptDecision};
 
 fn main() -> ExitCode {
-    let cfg = Config::from_env();
     let command = std::env::args().nth(1).unwrap_or_default();
 
     match command.as_str() {
-        "" | "ui" => run_ui(&cfg),
+        "" | "ui" => run_ui(&Config::from_env()),
         "statusline" => {
-            println!("{}", statusline::run(&cfg));
+            println!("{}", statusline::run(&Config::from_env()));
             ExitCode::SUCCESS
         }
         "pretool" => {
-            if let Decision::Deny(reason) = hook::pretool(&cfg) {
+            if let Decision::Deny(reason) = hook::pretool(&Config::for_hooks()) {
                 let out = json!({
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
@@ -38,7 +37,7 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        "prompt" => match hook::prompt(&cfg) {
+        "prompt" => match hook::prompt(&Config::for_hooks()) {
             PromptDecision::Allow(context) => {
                 if !context.is_empty() {
                     println!("{context}");
@@ -53,9 +52,9 @@ fn main() -> ExitCode {
         "borrow" | "override" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
             if args.is_empty() {
-                return run_ui(&cfg);
+                return run_ui(&Config::from_env());
             }
-            match credit::cli(&cfg, &args) {
+            match credit::cli(&Config::for_hooks(), &args) {
                 Ok(message) => {
                     println!("{message}");
                     ExitCode::SUCCESS

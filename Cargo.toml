@@ -3,9 +3,13 @@ name = "usage-pacer"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.74"
-description = "Subscription usage pacing for Claude Code"
+description = "A weekly usage pacer for Claude Code"
+repository = "https://github.com/mishoshup/cc-usage-pacer"
+homepage = "https://github.com/mishoshup/cc-usage-pacer"
 license = "MIT"
-authors = ["danialhaikal"]
+authors = ["Mishoshup"]
+keywords = ["claude-code", "usage", "rate-limit", "statusline", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 crossterm = "0.29.0"
@@ -23,8 +27,8 @@ unimplemented = "deny"
 dbg_macro = "deny"
 
 [profile.release]
-opt-level = "z"
-lto = true
+opt-level = 3
+lto = "fat"
 codegen-units = 1
-strip = true
+strip = "symbols"
 panic = "abort"

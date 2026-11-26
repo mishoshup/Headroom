@@ -26,21 +26,30 @@ command -v jq >/dev/null 2>&1 || { echo "usage-pacer: jq is required"; exit 1; }
 case "$REFRESH" in ''|*[!0-9]*) echo "usage-pacer: PACER_REFRESH must be whole seconds"; exit 1 ;; esac
 ((REFRESH >= 1)) || { echo "usage-pacer: PACER_REFRESH must be at least 1"; exit 1; }
 
+mkdir -p "$DEST_DIR"
+# macOS kills new executions of a Mach-O file that was overwritten in place
+# while a process was running from it. Rename a fresh inode into position.
+install_binary() {
+  local src=$1 dest=$2 tmp
+  tmp="$dest.tmp.$$"
+  cp "$src" "$tmp"
+  chmod +x "$tmp"
+  mv -f "$tmp" "$dest"
+}
+
 mkdir -p "$ROOT/bin"
 if command -v cargo >/dev/null 2>&1; then
   cargo build --release --manifest-path "$ROOT/Cargo.toml"
-  cp "$ROOT/target/release/usage-pacer" "$ROOT/bin/usage-pacer"
+  install_binary "$ROOT/target/release/usage-pacer" "$ROOT/bin/usage-pacer"
 elif [ -x "$ROOT/bin/usage-pacer" ]; then
   :
 else
   echo "usage-pacer: cargo is required to build, or place a prebuilt binary at bin/usage-pacer" >&2
   exit 1
 fi
-chmod +x "$ROOT/bin/usage-pacer"
 
 mkdir -p "$DEST_DIR"
-cp "$ROOT/bin/usage-pacer" "$DEST"
-chmod +x "$DEST"
+install_binary "$ROOT/bin/usage-pacer" "$DEST"
 "$DEST" self-test >/dev/null
 
 [ -f "$SETTINGS" ] || printf '{}\n' > "$SETTINGS"
@@ -64,4 +73,6 @@ jq --arg cmd "$DEST statusline" --argjson ri "$REFRESH" \
 
 echo "usage-pacer: installed $DEST"
 echo "usage-pacer: statusline wired (refresh ${REFRESH}s); settings backup at $backup"
+echo "usage-pacer: borrow panel:  $DEST"
+echo "usage-pacer: borrow CLI:    $DEST borrow 20"
 echo "usage-pacer: restart Claude Code to load the hooks and statusline"

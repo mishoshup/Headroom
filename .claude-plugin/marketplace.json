@@ -1,9 +1,10 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "usage-pacer-local",
-  "description": "Local marketplace for usage-pacer",
+  "name": "mishoshup",
+  "description": "Mishoshup Claude Code plugins",
   "owner": {
-    "name": "danialhaikal"
+    "name": "Mishoshup",
+    "url": "https://github.com/mishoshup"
   },
   "plugins": [
     {
@@ -11,7 +12,8 @@
       "displayName": "Usage Pacer",
       "description": "Weekly daily-pace ceiling, borrow credits and a 5-hour ceiling for Claude Code subscription usage.",
       "author": {
-        "name": "danialhaikal"
+        "name": "Mishoshup",
+        "url": "https://github.com/mishoshup"
       },
       "category": "productivity",
       "source": "."

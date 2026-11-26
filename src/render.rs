@@ -1,6 +1,8 @@
+use std::fmt::Write as _;
+
 use crate::pace::Pace;
 use crate::style::{Accent, Theme};
-use crate::util::{duration, format_pct, format_ratio};
+use crate::util::{Duration, Pct, Ratio};
 
 const LABEL_WIDTH: usize = 8;
 
@@ -18,6 +20,8 @@ pub struct WindowView {
     pub resets_at: Option<i64>,
 }
 
+/// Render the status line into one pre-sized buffer. No intermediate line or
+/// span strings are allocated.
 pub fn dashboard(
     snapshot: &Snapshot,
     pace: Option<&Pace>,
@@ -25,71 +29,83 @@ pub fn dashboard(
     now: u64,
     width: usize,
 ) -> String {
-    let mut lines = Vec::new();
+    let mut out = String::with_capacity(512);
     let sep = if theme.ascii() { " | " } else { " · " };
 
-    let mut header = format!(
-        "{}{}{}",
-        theme.dim("Usage"),
-        theme.faint(sep),
-        theme.bold_color(Accent::Cyan, &snapshot.model)
-    );
+    theme.write_dim(&mut out, "Usage");
+    theme.write_faint(&mut out, sep);
+    theme.write_bold_color(&mut out, Accent::Cyan, &snapshot.model);
     if let Some(ctx) = snapshot.ctx_bp {
-        header.push_str(&theme.faint(sep));
-        header.push_str(&theme.dim("context "));
+        theme.write_faint(&mut out, sep);
+        theme.write_dim(&mut out, "context ");
         let accent = usage_accent(ctx);
+        theme.start_color(&mut out, accent);
         if theme.ascii() {
-            header.push_str(&theme.color(accent, &format!("{}%", format_pct(ctx))));
+            let _ = write!(out, "{}%", Pct(ctx));
         } else {
-            header.push_str(&theme.color(
-                accent,
-                &format!("{} {}%", context_circle(ctx), format_pct(ctx)),
-            ));
+            let _ = write!(out, "{} {}%", context_circle(ctx), Pct(ctx));
         }
+        theme.reset(&mut out);
     }
-    lines.push(header);
+    out.push('\n');
 
     let cells = width.saturating_sub(38).clamp(10, 28);
 
     if let Some(five) = snapshot.five {
-        lines.push(window_row("5-hour", five, cells, theme, now));
+        write_window_row(&mut out, "5-hour", five, cells, theme, now);
+        out.push('\n');
     }
     if let Some(week) = snapshot.week {
-        lines.push(window_row("weekly", week, cells, theme, now));
+        write_window_row(&mut out, "weekly", week, cells, theme, now);
+        out.push('\n');
     }
     if let Some(p) = pace {
-        let (row, borrow_row) = today_row(p, cells, theme);
-        lines.push(row);
-        if let Some(borrow_row) = borrow_row {
-            lines.push(borrow_row);
+        write_today_row(&mut out, p, cells, theme);
+        out.push('\n');
+        if p.credit_bp > 0 {
+            write_borrow_row(&mut out, p, theme);
+            out.push('\n');
         }
     }
-
-    lines.join("\n")
-}
-
-fn window_row(label: &str, window: WindowView, cells: usize, theme: &Theme, now: u64) -> String {
-    let accent = usage_accent(window.used_bp);
-    let mut out = String::new();
-    out.push_str(&theme.dim(&format!("{label:<LABEL_WIDTH$}")));
-    out.push_str(&bar(window.used_bp, cells, theme, accent));
-    out.push_str("  ");
-    out.push_str(&theme.bold_color(
-        accent,
-        &format!("{:>6}", format!("{}%", format_pct(window.used_bp))),
-    ));
-    if let Some(reset) = window.resets_at {
-        if reset > now as i64 {
-            out.push_str(&format!(
-                "  {}",
-                theme.dim(&format!("resets in {}", duration(reset - now as i64)))
-            ));
-        }
+    if out.ends_with('\n') {
+        out.pop();
     }
     out
 }
 
-fn today_row(pace: &Pace, cells: usize, theme: &Theme) -> (String, Option<String>) {
+fn write_label(out: &mut String, theme: &Theme, label: &str) {
+    theme.write_dim(out, label);
+    for _ in label.len()..LABEL_WIDTH {
+        out.push(' ');
+    }
+}
+
+fn write_window_row(
+    out: &mut String,
+    label: &str,
+    window: WindowView,
+    cells: usize,
+    theme: &Theme,
+    now: u64,
+) {
+    let accent = usage_accent(window.used_bp);
+    write_label(out, theme, label);
+    write_bar(out, window.used_bp, cells, theme, accent);
+    out.push_str("  ");
+    theme.start_color(out, accent);
+    let _ = write!(out, "{:>6}%", Pct(window.used_bp));
+    theme.reset(out);
+    if let Some(reset) = window.resets_at {
+        if reset > now as i64 {
+            out.push_str("  ");
+            theme.start_color(out, Accent::Muted);
+            let _ = write!(out, "resets in {}", Duration(reset - now as i64));
+            theme.reset(out);
+        }
+    }
+}
+
+fn write_today_row(out: &mut String, pace: &Pace, cells: usize, theme: &Theme) {
     // 100% = today's allowance exactly used; 120% = overspent by 20% of it.
     let used_of_allowance = if pace.ceiling_bp > 0 {
         pace.used_bp.saturating_mul(10_000) / pace.ceiling_bp
@@ -105,47 +121,40 @@ fn today_row(pace: &Pace, cells: usize, theme: &Theme) -> (String, Option<String
     };
     let delta = pace.used_bp - pace.ceiling_bp;
 
-    let mut out = String::new();
-    out.push_str(&theme.dim(&format!("{:<LABEL_WIDTH$}", "today")));
-    out.push_str(&bar(used_of_allowance, cells, theme, accent));
+    write_label(out, theme, "today");
+    write_bar(out, used_of_allowance, cells, theme, accent);
     out.push_str("  ");
-    out.push_str(&theme.bold_color(
-        accent,
-        &format!("{:>6}", format!("{}%", format_ratio(used_of_allowance))),
-    ));
+    theme.start_color(out, accent);
+    let _ = write!(out, "{:>6}%", Ratio(used_of_allowance));
+    theme.reset(out);
     out.push_str("  ");
-    if delta > 0 {
-        out.push_str(&theme.color(
-            Accent::Red,
-            &format!("{}% extra of weekly", format_pct(delta)),
-        ));
-    } else {
-        out.push_str(&theme.color(
-            Accent::Green,
-            &format!("{}% left of weekly", format_pct(-delta)),
-        ));
-    }
 
-    let borrow_row = if pace.credit_bp > 0 {
-        Some(format!(
-            "{}  {} {}",
-            theme.dim(&format!("{:<LABEL_WIDTH$}", "")),
-            theme.color(
-                Accent::Cyan,
-                &format!("+{}% borrowed", format_pct(pace.credit_bp))
-            ),
-            theme.dim(&format!(
-                "· allowance {}% of weekly",
-                format_pct(pace.ceiling_bp)
-            ))
-        ))
+    if delta > 0 {
+        theme.start_color(out, Accent::Red);
+        let _ = write!(out, "{}% extra of weekly", Pct(delta));
+        theme.reset(out);
     } else {
-        None
-    };
-    (out, borrow_row)
+        theme.start_color(out, Accent::Green);
+        let _ = write!(out, "{}% left of weekly", Pct(-delta));
+        theme.reset(out);
+    }
 }
 
-fn bar(bp: i64, cells: usize, theme: &Theme, accent: Accent) -> String {
+fn write_borrow_row(out: &mut String, pace: &Pace, theme: &Theme) {
+    for _ in 0..LABEL_WIDTH {
+        out.push(' ');
+    }
+    out.push_str("  ");
+    theme.start_color(out, Accent::Cyan);
+    let _ = write!(out, "+{}% borrowed", Pct(pace.credit_bp));
+    theme.reset(out);
+    theme.write_faint(out, " · ");
+    theme.start_color(out, Accent::Muted);
+    let _ = write!(out, "allowance {}% of weekly", Pct(pace.ceiling_bp));
+    theme.reset(out);
+}
+
+fn write_bar(out: &mut String, bp: i64, cells: usize, theme: &Theme, accent: Accent) {
     let bp = bp.clamp(0, 10_000);
     let filled = ((bp * cells as i64 + 5_000) / 10_000) as usize;
     let (full, empty) = if theme.ascii() {
@@ -153,9 +162,18 @@ fn bar(bp: i64, cells: usize, theme: &Theme, accent: Accent) -> String {
     } else {
         ('▰', '▱')
     };
-    let fill = full.to_string().repeat(filled);
-    let pad = empty.to_string().repeat(cells - filled);
-    format!("{}{}", theme.color(accent, &fill), theme.faint(&pad))
+
+    theme.start_color(out, accent);
+    for _ in 0..filled {
+        out.push(full);
+    }
+    theme.reset(out);
+
+    theme.start_color(out, Accent::Faint);
+    for _ in 0..(cells - filled) {
+        out.push(empty);
+    }
+    theme.reset(out);
 }
 
 fn usage_accent(bp: i64) -> Accent {
@@ -168,7 +186,6 @@ fn usage_accent(bp: i64) -> Accent {
     }
 }
 
-/// Small circular gauge for the context window.
 fn context_circle(bp: i64) -> &'static str {
     match bp.clamp(0, 10_000) {
         0 => "○",
@@ -219,7 +236,7 @@ mod tests {
         let out = dashboard(&snap, Some(&pace()), &theme(), 1_000, 80);
         assert!(out.starts_with("Usage · Sonnet · context "));
         assert!(out.contains("42.4%"));
-        assert!(out.contains("◑"));
+        assert!(out.contains('◑'));
         assert!(out.contains("5-hour"));
         assert!(out.contains("weekly"));
         assert!(out.contains("today"));
