@@ -19,9 +19,9 @@ service to operate.
 
 ## Decision
 
-1. **Rust, one binary.** `pacer` is a single Rust binary with subcommands for
-   the status line, both hooks, the borrow panel, and the CLI. Startup is about
-   2 ms; there is no runtime dependency.
+1. **Rust, one binary.** `headroom` is a single Rust binary with subcommands for
+   the status line, both hooks, the borrow panel, and the CLI. Startup cost is
+   suitable for a per-tool-call hook, and there is no runtime dependency.
 2. **A flat JSON snapshot for usage.** The status line writes one small JSON
    object containing the two windows. Hooks read it with serde. Counter updates
    are atomic (temporary file plus rename).

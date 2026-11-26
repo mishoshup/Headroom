@@ -51,15 +51,15 @@ impl Config {
             .or_else(|| env::var_os("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let pacer_home = env::var_os("HEADROOM_HOME")
+        let headroom_home = env::var_os("HEADROOM_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".claude").join("headroom"));
         let state = env::var_os("HEADROOM_STATE")
             .map(PathBuf::from)
-            .unwrap_or_else(|| pacer_home.join("state"));
+            .unwrap_or_else(|| headroom_home.join("state"));
         let credit = env::var_os("HEADROOM_CREDIT")
             .map(PathBuf::from)
-            .unwrap_or_else(|| pacer_home.join("credit.json"));
+            .unwrap_or_else(|| headroom_home.join("credit.json"));
 
         let week_days = env_u64("HEADROOM_WEEK_DAYS", 7).clamp(1, 31) as u32;
         let stale_after = env_u64("HEADROOM_STALE_AFTER", 900);
