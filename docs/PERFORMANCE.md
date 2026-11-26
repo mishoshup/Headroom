@@ -2,17 +2,20 @@
 
 ## Hook path
 
-Measured on an Apple-silicon macOS machine with a warm release binary, 300
-invocations per command, state file present, using Python `subprocess` timing:
+Reference measurement on an Apple-silicon macOS machine with a warm release
+binary, state file present, 100–200 invocations per command using Python
+`subprocess` timing. System load average was 3.76 during the run; `/usr/bin/true`
+measured p50 1.67 ms in the same loop.
 
 | Command | Mean | p50 | p95 |
 |---|---:|---:|---:|
-| `pretool` (allow path) | 2.19 ms | 2.08 ms | 2.98 ms |
-| `prompt` | 2.07 ms | 2.06 ms | 2.21 ms |
-| `statusline` | 2.29 ms | 2.25 ms | 2.76 ms |
+| `pretool` (allow path) | 2.26 ms | 2.16 ms | 2.63 ms |
+| `prompt` | 2.25 ms | 2.22 ms | 2.46 ms |
+| `statusline` | 2.47 ms | 2.41 ms | 3.12 ms |
 
-Process creation accounts for roughly 1.6 ms of each figure; the hook logic and
-state read are a small remainder. Measurements vary with machine load.
+Process creation is about 1.7 ms of each figure. Hook logic and state read add
+roughly 0.5–0.75 ms. Measurements vary with machine load; earlier quiet-machine
+runs measured approximately 2.1–2.3 ms per command.
 
 ## Rendering
 
