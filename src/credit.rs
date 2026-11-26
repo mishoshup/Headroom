@@ -145,7 +145,7 @@ pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
     match sub {
         "clear" | "off" | "reset" => {
             Credit::clear(&cfg.credit).map_err(|e| format!("could not clear credit: {e}"))?;
-            Ok("usage-pacer: override cleared; the normal daily pace applies again.".into())
+            Ok("headroom: override cleared; the normal daily pace applies again.".into())
         }
         "status" | "show" => status_text(cfg),
         "help" | "--help" | "-h" => Err(usage()),
@@ -198,7 +198,7 @@ pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
                 Scope::Day => "today",
             };
             let mut out = format!(
-                "usage-pacer: added +{}% for {scope_text}",
+                "headroom: added +{}% for {scope_text}",
                 format_pct(applied.added_bp)
             );
             if applied.total_bp != applied.added_bp {
@@ -253,14 +253,14 @@ pub fn status_text(cfg: &Config) -> Result<String, String> {
         let delta = week.used_bp - base.ceiling_bp;
         return Ok(if delta > 0 {
             format!(
-                "usage-pacer: no active override. Today's limit is {}%; you are {}% over. Weekly usage {}%.",
+                "headroom: no active override. Today's limit is {}%; you are {}% over. Weekly usage {}%.",
                 format_pct(base.ceiling_bp),
                 format_pct(delta),
                 format_pct(week.used_bp)
             )
         } else {
             format!(
-                "usage-pacer: no active override. Today's limit is {}%; {}% left. Weekly usage {}%.",
+                "headroom: no active override. Today's limit is {}%; {}% left. Weekly usage {}%.",
                 format_pct(base.ceiling_bp),
                 format_pct(-delta),
                 format_pct(week.used_bp)
@@ -280,7 +280,7 @@ pub fn status_text(cfg: &Config) -> Result<String, String> {
         format!("{}% left", format_pct(-delta))
     };
     Ok(format!(
-        "usage-pacer: +{}% borrowed for {scope_text} (expires in {}).\n\
+        "headroom: +{}% borrowed for {scope_text} (expires in {}).\n\
          Today's limit is {}%; {standing}. Weekly usage {}%{}.",
         format_pct(extra),
         duration(c.expires_at - now as i64),
@@ -291,9 +291,9 @@ pub fn status_text(cfg: &Config) -> Result<String, String> {
 }
 
 fn usage() -> String {
-    "usage: usage-pacer borrow <percent> [--week] [--note text]\n\
-     \x20      usage-pacer borrow status\n\
-     \x20      usage-pacer borrow clear"
+    "usage: headroom borrow <percent> [--week] [--note text]\n\
+     \x20      headroom borrow status\n\
+     \x20      headroom borrow clear"
         .into()
 }
 

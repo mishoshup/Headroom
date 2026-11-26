@@ -1,6 +1,6 @@
 # Runtime contract
 
-This document is the source of truth for the interfaces `usage-pacer` consumes
+This document is the source of truth for the interfaces `headroom` consumes
 and produces. Changes to these shapes are contract changes and require a
 matching update here.
 
@@ -8,15 +8,15 @@ matching update here.
 
 | Command | Output | Exit code |
 |---|---|---|
-| `usage-pacer` / `usage-pacer ui` | Interactive borrow panel on a TTY; status text otherwise | 0, 1 on failure |
-| `usage-pacer statusline` | Status-line text on stdout | 0 |
-| `usage-pacer pretool` | Nothing, or a PreToolUse deny object on stdout | 0 |
-| `usage-pacer prompt` | Context on stdout, or a block message on stderr | 0, 2 when blocked |
-| `usage-pacer borrow <pct> [--week] [--note text]` | Confirmation text | 0, 1 on failure |
-| `usage-pacer borrow status` | Active credit text | 0, 1 on failure |
-| `usage-pacer borrow clear` | Confirmation text | 0, 1 on failure |
-| `usage-pacer self-test` | `self-test passed` | 0, 1 on failure |
-| `usage-pacer help` | Usage text | 0 |
+| `headroom` / `headroom ui` | Interactive borrow panel on a TTY; status text otherwise | 0, 1 on failure |
+| `headroom statusline` | Status-line text on stdout | 0 |
+| `headroom pretool` | Nothing, or a PreToolUse deny object on stdout | 0 |
+| `headroom prompt` | Context on stdout, or a block message on stderr | 0, 2 when blocked |
+| `headroom borrow <pct> [--week] [--note text]` | Confirmation text | 0, 1 on failure |
+| `headroom borrow status` | Active credit text | 0, 1 on failure |
+| `headroom borrow clear` | Confirmation text | 0, 1 on failure |
+| `headroom self-test` | `self-test passed` | 0, 1 on failure |
+| `headroom help` | Usage text | 0 |
 
 `borrow` is additive. The resulting credit is clamped to 100% of the weekly
 limit. A day-scoped credit expires at the next allowance boundary; a
@@ -47,7 +47,7 @@ Absent windows are valid. An unparseable payload produces the minimal header
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "usage-pacer: ..."
+    "permissionDecisionReason": "headroom: ..."
   }
 }
 ```
@@ -70,7 +70,7 @@ Atomic JSON, written by `statusline` and read by the hooks.
 - `used_bp` is the percentage in basis points (`4600` = 46.00%).
 - `resets_at` is Unix epoch seconds.
 - Either window may be absent.
-- A snapshot older than `PACER_STALE_AFTER` is ignored, which fails open.
+- A snapshot older than `HEADROOM_STALE_AFTER` is ignored, which fails open.
 
 ## 5. Borrow credit (`credit.json`)
 
@@ -96,10 +96,10 @@ Atomic JSON, written by `statusline` and read by the hooks.
 ## 6. Allowance invariants
 
 ```
-week_seconds = PACER_WEEK_DAYS * 86400
+week_seconds = HEADROOM_WEEK_DAYS * 86400
 elapsed      = clamp(now - (resets_at - week_seconds), 0, week_seconds - 1)
 day          = elapsed / 86400 + 1
-daily_bp     = PACER_DAILY_PERCENT or round(PACER_WEEKLY_TARGET / week_days)
+daily_bp     = HEADROOM_DAILY_PERCENT or round(HEADROOM_WEEKLY_TARGET / week_days)
 allowance_bp = min(10000, daily_bp * day)
 ceiling_bp   = min(10000, allowance_bp + grace_bp + credit_bp)
 over         = used_bp > ceiling_bp
@@ -116,7 +116,7 @@ A day-scoped credit expires at `min(resets_at, window_start + day * 86400)`.
 | Status-line payload unparseable | Minimal header; previous snapshot retained |
 | Snapshot write failure | Status line still renders; next tick retries |
 | Credit write failure | CLI/panel reports the error and exits non-zero |
-| Wait mode reset longer than `PACER_MAX_SLEEP` | Tool call denied; no partial sleep |
+| Wait mode reset longer than `HEADROOM_MAX_SLEEP` | Tool call denied; no partial sleep |
 
 The guard is local to the machine and the Claude Code process. It is not a
 billing system: `claude --bare`, environment overrides, another machine, and

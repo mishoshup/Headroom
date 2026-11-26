@@ -68,17 +68,17 @@ fn main() -> ExitCode {
         "self-test" => self_test(),
         "help" | "--help" | "-h" => {
             println!(
-                "usage: usage-pacer [ui]              interactive borrow panel\n\
-                 \x20      usage-pacer statusline       statusline renderer\n\
-                 \x20      usage-pacer borrow <pct>     borrow headroom non-interactively\n\
-                 \x20      usage-pacer borrow status    show the active credit\n\
-                 \x20      usage-pacer borrow clear     remove the credit\n\
-                 \x20      usage-pacer self-test        maths sanity checks"
+                "usage: headroom [ui]              interactive borrow panel\n\
+                 \x20      headroom statusline       statusline renderer\n\
+                 \x20      headroom borrow <pct>     borrow headroom non-interactively\n\
+                 \x20      headroom borrow status    show the active credit\n\
+                 \x20      headroom borrow clear     remove the credit\n\
+                 \x20      headroom self-test        maths sanity checks"
             );
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: usage-pacer [ui|statusline|borrow|self-test]");
+            eprintln!("usage: headroom [ui|statusline|borrow|self-test]");
             ExitCode::from(64)
         }
     }

@@ -51,38 +51,38 @@ impl Config {
             .or_else(|| env::var_os("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let pacer_home = env::var_os("PACER_HOME")
+        let pacer_home = env::var_os("HEADROOM_HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".claude").join("usage-pacer"));
-        let state = env::var_os("PACER_STATE")
+            .unwrap_or_else(|| home.join(".claude").join("headroom"));
+        let state = env::var_os("HEADROOM_STATE")
             .map(PathBuf::from)
             .unwrap_or_else(|| pacer_home.join("state"));
-        let credit = env::var_os("PACER_CREDIT")
+        let credit = env::var_os("HEADROOM_CREDIT")
             .map(PathBuf::from)
             .unwrap_or_else(|| pacer_home.join("credit.json"));
 
-        let week_days = env_u64("PACER_WEEK_DAYS", 7).clamp(1, 31) as u32;
-        let stale_after = env_u64("PACER_STALE_AFTER", 900);
-        let five_limit_bp = env_bp("PACER_FIVE_HOUR_LIMIT").unwrap_or(9_800);
-        let five_mode = match env::var("PACER_FIVE_HOUR_MODE")
+        let week_days = env_u64("HEADROOM_WEEK_DAYS", 7).clamp(1, 31) as u32;
+        let stale_after = env_u64("HEADROOM_STALE_AFTER", 900);
+        let five_limit_bp = env_bp("HEADROOM_FIVE_HOUR_LIMIT").unwrap_or(9_800);
+        let five_mode = match env::var("HEADROOM_FIVE_HOUR_MODE")
             .unwrap_or_default()
             .as_str()
         {
             "wait" | "sleep" => FiveMode::Wait,
             _ => FiveMode::Block,
         };
-        let reset_buffer = env_u64("PACER_RESET_BUFFER", 60);
-        let max_sleep = env_u64("PACER_MAX_SLEEP", 19_800);
-        let pacing = env_bool("PACER_PACING", true);
-        let block_prompts = env_bool("PACER_BLOCK_PROMPTS", true);
-        let daily_bp = env_bp("PACER_DAILY_PERCENT");
-        let target_bp = env_bp("PACER_WEEKLY_TARGET").unwrap_or(10_000);
-        let grace_bp = env_bp("PACER_PACING_GRACE").unwrap_or(0);
+        let reset_buffer = env_u64("HEADROOM_RESET_BUFFER", 60);
+        let max_sleep = env_u64("HEADROOM_MAX_SLEEP", 19_800);
+        let pacing = env_bool("HEADROOM_PACING", true);
+        let block_prompts = env_bool("HEADROOM_BLOCK_PROMPTS", true);
+        let daily_bp = env_bp("HEADROOM_DAILY_PERCENT");
+        let target_bp = env_bp("HEADROOM_WEEKLY_TARGET").unwrap_or(10_000);
+        let grace_bp = env_bp("HEADROOM_PACING_GRACE").unwrap_or(0);
         let (color, ascii, bottom_margin) = if render {
             let color = detect_color();
-            let ascii = env_bool("PACER_ASCII", false)
+            let ascii = env_bool("HEADROOM_ASCII", false)
                 || env::var("TERM").map(|t| t == "dumb").unwrap_or(false);
-            let bottom_margin = env_u64("PACER_BOTTOM_MARGIN", 1).min(3) as u32;
+            let bottom_margin = env_u64("HEADROOM_BOTTOM_MARGIN", 1).min(3) as u32;
             (color, ascii, bottom_margin)
         } else {
             (ColorMode::None, false, 0)
@@ -153,7 +153,7 @@ fn detect_color() -> ColorMode {
         return ColorMode::None;
     }
 
-    match env::var("PACER_COLOR")
+    match env::var("HEADROOM_COLOR")
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase()

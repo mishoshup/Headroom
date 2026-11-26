@@ -1,15 +1,15 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "usage-pacer",
-  "displayName": "Usage Pacer",
+  "name": "headroom",
+  "displayName": "Headroom",
   "description": "Paces Claude Code's weekly subscription usage across the window, with temporary borrow credits for heavy days and a separate 5-hour ceiling. Rendered by a fast native binary with truecolor and adaptive bars.",
   "version": "1.0.0",
   "author": {
     "name": "Mishoshup",
     "url": "https://github.com/mishoshup"
   },
-  "homepage": "https://github.com/mishoshup/cc-usage-pacer",
-  "repository": "https://github.com/mishoshup/cc-usage-pacer",
+  "homepage": "https://github.com/mishoshup/headroom",
+  "repository": "https://github.com/mishoshup/headroom",
   "license": "MIT",
   "keywords": [
     "claude-code",

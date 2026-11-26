@@ -1,20 +1,20 @@
-# usage-pacer
+# Headroom
 
-[![CI](https://github.com/mishoshup/cc-usage-pacer/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/cc-usage-pacer/actions/workflows/ci.yml)
+[![CI](https://github.com/mishoshup/headroom/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/headroom/actions/workflows/ci.yml)
 
-A weekly usage pacer for Claude Code, maintained by
+Weekly usage pacing for Claude Code, maintained by
 [Mishoshup](https://github.com/mishoshup).
 
-`usage-pacer` enforces a daily share of the weekly subscription allowance and
+Headroom enforces a daily share of the weekly subscription allowance and
 reports how much of today's allowance remains. It is a single native Rust
 binary with no runtime dependencies.
 
-![usage-pacer status line and interactive borrow panel](docs/panel.png)
+![Headroom status line and interactive borrow panel](docs/panel.png)
 
 ## Overview
 
 Claude Code exposes the weekly rate-limit percentage and its reset time to the
-status-line command. `usage-pacer` divides the seven-day window into daily
+status-line command. `headroom` divides the seven-day window into daily
 allowances:
 
 ```
@@ -59,11 +59,11 @@ When a borrow is active, one subordinate row reports it:
 
 ## Interactive panel
 
-Run `~/.claude/usage-pacer/usage-pacer` without arguments, or
-`~/.claude/usage-pacer/usage-pacer borrow`, in a terminal.
+Run `~/.claude/headroom/headroom` without arguments, or
+`~/.claude/headroom/headroom borrow`, in a terminal.
 
 ```
-usage-pacer  borrow extra headroom
+Headroom  borrow extra headroom
 You are 3.13% over today's limit.  Weekly usage is 46%.
 ────────────────────────────────────────────────
 weekly used ▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱    46%  resets in 4d 12h
@@ -101,11 +101,11 @@ A borrow adds percentage points of the weekly limit to the current allowance.
 Borrows are additive and expire automatically.
 
 ```bash
-~/.claude/usage-pacer/usage-pacer borrow 20
+~/.claude/headroom/headroom borrow 20
 ```
 
 ```
-usage-pacer: added +20% for today.
+headroom: added +20% for today.
 today's limit: 42.87% -> 62.87%.
 You now have 16.87% left today.
 Expires in 11h 59m. Future days keep their normal limits, so unused
@@ -120,9 +120,9 @@ Options:
 - `borrow status` — display the active borrow.
 - `borrow clear` — remove it.
 
-The credit is stored in `~/.claude/usage-pacer/credit.json`, keyed to the
-weekly reset and day. Inside Claude Code, `/usage-pacer:borrow 20` and
-`!~/.claude/usage-pacer/usage-pacer borrow 20` provide the same command.
+The credit is stored in `~/.claude/headroom/credit.json`, keyed to the
+weekly reset and day. Inside Claude Code, `/headroom:borrow 20` and
+`!~/.claude/headroom/headroom borrow 20` provide the same command.
 
 ## Enforcement
 
@@ -146,27 +146,27 @@ Requirements:
 - macOS, Linux, or WSL
 
 ```bash
-claude plugin marketplace add mishoshup/cc-usage-pacer
-claude plugin install usage-pacer@mishoshup
+claude plugin marketplace add mishoshup/headroom
+claude plugin install headroom@mishoshup
 ```
 
-Then run `/usage-pacer:setup` inside Claude Code. For a local checkout:
+Then run `/headroom:setup` inside Claude Code. For a local checkout:
 
 ```bash
-claude plugin marketplace add ~/Developer/usage-pacer
-claude plugin install usage-pacer@mishoshup
-bash ~/Developer/usage-pacer/scripts/install.sh
+claude plugin marketplace add ~/Developer/headroom
+claude plugin install headroom@mishoshup
+bash ~/Developer/headroom/scripts/install.sh
 ```
 
 The installer builds the release binary, installs it under
-`~/.claude/usage-pacer/`, copies the hook binary into the plugin directory,
+`~/.claude/headroom/`, copies the hook binary into the plugin directory,
 takes a timestamped backup of `settings.json`, and configures the status line.
 Claude Code must be restarted after installation so that the hooks are loaded.
 
 If a different status line is already configured, the installer leaves it
 untouched. Pass `--force` to replace it.
 
-The binary is installed at `~/.claude/usage-pacer/usage-pacer` and is **not**
+The binary is installed at `~/.claude/headroom/headroom` and is **not**
 added to `PATH`. The hooks invoke it by absolute path, and all borrow commands
 in this document use that absolute path.
 
@@ -177,25 +177,25 @@ in the environment that launches Claude Code.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PACER_DAILY_PERCENT` | `100 / 7` (14.29) | Percentage points of the weekly limit granted per day. |
-| `PACER_WEEKLY_TARGET` | `100` | Weekly percentage to distribute when `PACER_DAILY_PERCENT` is unset. |
-| `PACER_PACING` | `on` | Set to `off` to disable the weekly pace guard. |
-| `PACER_PACING_GRACE` | `0` | Additional points of tolerance before blocking. |
-| `PACER_BLOCK_PROMPTS` | `1` | Set to `0` to block tools only. |
-| `PACER_FIVE_HOUR_LIMIT` | `98` | Five-hour ceiling, in percent. |
-| `PACER_FIVE_HOUR_MODE` | `block` | `wait` sleeps until the five-hour reset instead of denying. |
-| `PACER_STALE_AFTER` | `900` | Maximum snapshot age, in seconds. |
-| `PACER_WEEK_DAYS` | `7` | Window length, in days. |
-| `PACER_COLOR` | automatic | `off`, `16`, `256`, or `truecolor`. `NO_COLOR` also disables colour. |
-| `PACER_ASCII` | `0` | Set to `1` for ASCII bars and glyphs. |
-| `PACER_BOTTOM_MARGIN` | `1` | Blank rows between the status line and the built-in footer (0–3). |
-| `PACER_STATE` | `~/.claude/usage-pacer/state` | Snapshot path. |
-| `PACER_CREDIT` | `~/.claude/usage-pacer/credit.json` | Borrow-credit path. |
+| `HEADROOM_DAILY_PERCENT` | `100 / 7` (14.29) | Percentage points of the weekly limit granted per day. |
+| `HEADROOM_WEEKLY_TARGET` | `100` | Weekly percentage to distribute when `HEADROOM_DAILY_PERCENT` is unset. |
+| `HEADROOM_PACING` | `on` | Set to `off` to disable the weekly pace guard. |
+| `HEADROOM_PACING_GRACE` | `0` | Additional points of tolerance before blocking. |
+| `HEADROOM_BLOCK_PROMPTS` | `1` | Set to `0` to block tools only. |
+| `HEADROOM_FIVE_HOUR_LIMIT` | `98` | Five-hour ceiling, in percent. |
+| `HEADROOM_FIVE_HOUR_MODE` | `block` | `wait` sleeps until the five-hour reset instead of denying. |
+| `HEADROOM_STALE_AFTER` | `900` | Maximum snapshot age, in seconds. |
+| `HEADROOM_WEEK_DAYS` | `7` | Window length, in days. |
+| `HEADROOM_COLOR` | automatic | `off`, `16`, `256`, or `truecolor`. `NO_COLOR` also disables colour. |
+| `HEADROOM_ASCII` | `0` | Set to `1` for ASCII bars and glyphs. |
+| `HEADROOM_BOTTOM_MARGIN` | `1` | Blank rows between the status line and the built-in footer (0–3). |
+| `HEADROOM_STATE` | `~/.claude/headroom/state` | Snapshot path. |
+| `HEADROOM_CREDIT` | `~/.claude/headroom/credit.json` | Borrow-credit path. |
 
 ## Failure behaviour
 
 - The guard fails open when the snapshot is absent, malformed, or older than
-  `PACER_STALE_AFTER`. A broken meter must not prevent work.
+  `HEADROOM_STALE_AFTER`. A broken meter must not prevent work.
 - The status line is the source of the rate-limit snapshot; if the status
   line is not configured, enforcement is inactive.
 - State and credit writes are atomic (temporary file followed by rename).
@@ -223,8 +223,7 @@ tests/cli.rs     end-to-end behaviour tests
 
 The runtime contract is documented in [docs/CONTRACT.md](docs/CONTRACT.md).
 Architecture decisions are recorded in
-[docs/adr](docs/adr/0001-rust-binary-flat-state.md), and measured performance in
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+[docs/adr](docs/adr/0001-rust-binary-flat-state.md).
 
 Quality gates:
 
@@ -241,9 +240,9 @@ tests, and a release build on every push.
 ## Uninstall
 
 ```bash
-claude plugin uninstall usage-pacer@mishoshup
+claude plugin uninstall headroom@mishoshup
 claude plugin marketplace remove mishoshup
-rm -rf ~/.claude/usage-pacer
+rm -rf ~/.claude/headroom
 ```
 
 Remove the `statusLine` key from `~/.claude/settings.json` if another status

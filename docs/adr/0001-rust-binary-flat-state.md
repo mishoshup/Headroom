@@ -50,8 +50,8 @@ service to operate.
 - A build step (`cargo build --release`) is required at install time. CI
   publishes a release build per platform if distribution expands.
 - The installer must place the binary at a stable path because the plugin
-  hooks invoke `${CLAUDE_PLUGIN_ROOT}/bin/usage-pacer` and the status line
-  invokes `~/.claude/usage-pacer/usage-pacer`.
+  hooks invoke `${CLAUDE_PLUGIN_ROOT}/bin/headroom` and the status line
+  invokes `~/.claude/headroom/headroom`.
 - The command surface and file schemas are documented in `docs/CONTRACT.md`.
 - Reviewers must keep the hook path free of panics and unbounded work; the
   release profile uses `panic = "abort"`.

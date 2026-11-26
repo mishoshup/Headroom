@@ -8,8 +8,8 @@
   },
   "plugins": [
     {
-      "name": "usage-pacer",
-      "displayName": "Usage Pacer",
+      "name": "headroom",
+      "displayName": "Headroom",
       "description": "Weekly daily-pace ceiling, borrow credits and a 5-hour ceiling for Claude Code subscription usage.",
       "author": {
         "name": "Mishoshup",

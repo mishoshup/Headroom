@@ -253,7 +253,7 @@ impl Panel<'_> {
         credit::Credit::clear(&self.cfg.credit)
             .map_err(|e| format!("could not clear the override: {e}"))?;
         Ok(Some(
-            "usage-pacer: override cleared; the normal daily pace applies again.".into(),
+            "headroom: override cleared; the normal daily pace applies again.".into(),
         ))
     }
 
@@ -265,7 +265,7 @@ impl Panel<'_> {
             Scope::Day => "today",
         };
         let mut out = format!(
-            "usage-pacer: added +{}% for {scope_text}",
+            "headroom: added +{}% for {scope_text}",
             format_pct(applied.added_bp)
         );
         if applied.total_bp != applied.added_bp {
@@ -344,7 +344,7 @@ impl Panel<'_> {
         let mut lines: Vec<String> = Vec::new();
         lines.push(format!(
             "{}  {}",
-            self.theme.bold_color(Accent::Cyan, "usage-pacer"),
+            self.theme.bold_color(Accent::Cyan, "Headroom"),
             self.theme.dim("borrow extra headroom")
         ));
 

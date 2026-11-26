@@ -1,11 +1,11 @@
 [package]
-name = "usage-pacer"
+name = "headroom"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.74"
-description = "A weekly usage pacer for Claude Code"
-repository = "https://github.com/mishoshup/cc-usage-pacer"
-homepage = "https://github.com/mishoshup/cc-usage-pacer"
+description = "Weekly usage pacing for Claude Code"
+repository = "https://github.com/mishoshup/headroom"
+homepage = "https://github.com/mishoshup/headroom"
 license = "MIT"
 authors = ["Mishoshup"]
 keywords = ["claude-code", "usage", "rate-limit", "statusline", "cli"]

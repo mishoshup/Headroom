@@ -53,14 +53,14 @@ pub fn pretool(cfg: &Config) -> Decision {
                     }
                     if nap > cfg.max_sleep as i64 {
                         return Decision::Deny(format!(
-                            "usage-pacer: the 5-hour window is at {}%; the reset is {} away, longer than the configured maximum wait of {}. The call is denied instead of sleeping partially. Retry after the reset, or set PACER_FIVE_HOUR_MODE=block.",
+                            "headroom: the 5-hour window is at {}%; the reset is {} away, longer than the configured maximum wait of {}. The call is denied instead of sleeping partially. Retry after the reset, or set HEADROOM_FIVE_HOUR_MODE=block.",
                             format_pct(five.used_bp),
                             duration(nap),
                             duration(cfg.max_sleep as i64)
                         ));
                     }
                     eprintln!(
-                        "usage-pacer: 5h at {}%; sleeping {nap}s for the reset.",
+                        "headroom: 5h at {}%; sleeping {nap}s for the reset.",
                         format_pct(five.used_bp)
                     );
                     std::thread::sleep(Duration::from_secs(nap as u64));
@@ -141,7 +141,7 @@ pub fn prompt(cfg: &Config) -> PromptDecision {
                         };
                         if pace.over {
                             parts.push(format!(
-                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer`",
+                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom`",
                                 pace.day,
                                 pace.week_days,
                                 format_pct(pace.used_bp),
@@ -172,7 +172,7 @@ pub fn prompt(cfg: &Config) -> PromptDecision {
         return PromptDecision::Allow(String::new());
     }
     PromptDecision::Allow(format!(
-        "[usage-pacer] {}. Keep steps small as the ceiling approaches.",
+        "[headroom] {}. Keep steps small as the ceiling approaches.",
         parts.join("; ")
     ))
 }
@@ -190,7 +190,7 @@ fn five_reason(cfg: &Config, five: &Window, now: u64) -> String {
         .map(|r| format!(" Resets in {}.", duration(r - now as i64)))
         .unwrap_or_default();
     format!(
-        "usage-pacer: the 5-hour window is at {}% of a {}% ceiling.{reset} Stop and checkpoint; tools stay denied until the window rolls over.",
+        "headroom: the 5-hour window is at {}% of a {}% ceiling.{reset} Stop and checkpoint; tools stay denied until the window rolls over.",
         format_pct(five.used_bp),
         format_pct(cfg.five_limit_bp)
     )
@@ -203,7 +203,7 @@ fn weekly_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "usage-pacer: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer` in a terminal.",
+        "headroom: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom` in a terminal.",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),
@@ -218,7 +218,7 @@ fn block_reason(pace: &Pace, now: u64) -> String {
         String::new()
     };
     format!(
-        "usage-pacer: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `~/.claude/usage-pacer/usage-pacer borrow <pct>` or open `~/.claude/usage-pacer/usage-pacer` in a terminal. Raise PACER_DAILY_PERCENT or set PACER_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
+        "headroom: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `~/.claude/headroom/headroom borrow <pct>` or open `~/.claude/headroom/headroom` in a terminal. Raise HEADROOM_DAILY_PERCENT or set HEADROOM_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
         format_pct(pace.used_bp),
         pace.day,
         format_pct(pace.ceiling_bp),

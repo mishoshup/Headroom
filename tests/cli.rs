@@ -17,7 +17,7 @@ fn now() -> u64 {
 
 fn home(name: &str) -> PathBuf {
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("usage-pacer-{name}-{}-{id}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("headroom-{name}-{}-{id}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
@@ -35,11 +35,11 @@ fn write_state(home: &Path, captured: u64, five: Option<(i64, i64)>, week: Optio
 }
 
 fn run(home: &Path, args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_usage-pacer"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_headroom"));
     command
         .args(args)
-        .env("PACER_HOME", home)
-        .env("PACER_COLOR", "off")
+        .env("HEADROOM_HOME", home)
+        .env("HEADROOM_COLOR", "off")
         .env_remove("NO_COLOR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -105,10 +105,15 @@ fn custom_daily_percent_and_grace_apply() {
     let reset = now() as i64 + 3 * 86_400 + 43_200;
 
     write_state(&home, now(), None, Some((4_500, reset)));
-    let out = run(&home, &["pretool"], None, &[("PACER_DAILY_PERCENT", "10")]);
+    let out = run(
+        &home,
+        &["pretool"],
+        None,
+        &[("HEADROOM_DAILY_PERCENT", "10")],
+    );
     assert!(String::from_utf8_lossy(&out.stdout).contains("deny"));
 
-    let out = run(&home, &["pretool"], None, &[("PACER_PACING_GRACE", "6")]);
+    let out = run(&home, &["pretool"], None, &[("HEADROOM_PACING_GRACE", "6")]);
     assert!(out.stdout.is_empty());
 }
 
@@ -125,7 +130,7 @@ fn five_hour_ceiling_and_stale_state() {
         &home,
         &["pretool"],
         None,
-        &[("PACER_FIVE_HOUR_MODE", "block")],
+        &[("HEADROOM_FIVE_HOUR_MODE", "block")],
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("deny"));
 
@@ -144,7 +149,10 @@ fn wait_mode_denies_when_reset_exceeds_max_wait() {
         &home,
         &["pretool"],
         None,
-        &[("PACER_FIVE_HOUR_MODE", "wait"), ("PACER_MAX_SLEEP", "1")],
+        &[
+            ("HEADROOM_FIVE_HOUR_MODE", "wait"),
+            ("HEADROOM_MAX_SLEEP", "1"),
+        ],
     );
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains(r#""permissionDecision":"deny""#));
@@ -159,7 +167,7 @@ fn prompt_blocks_and_slash_commands_pass() {
 
     let out = run(&home, &["prompt"], Some(r#"{"prompt":"do work"}"#), &[]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("usage-pacer"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("headroom"));
 
     let out = run(&home, &["prompt"], Some(r#"{"prompt":"/usage"}"#), &[]);
     assert!(out.status.success());
@@ -168,7 +176,7 @@ fn prompt_blocks_and_slash_commands_pass() {
         &home,
         &["prompt"],
         Some(r#"{"prompt":"do work"}"#),
-        &[("PACER_BLOCK_PROMPTS", "0")],
+        &[("HEADROOM_BLOCK_PROMPTS", "0")],
     );
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("OVER"));

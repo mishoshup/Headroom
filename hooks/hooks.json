@@ -6,9 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/usage-pacer\" pretool",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" pretool",
             "timeout": 21600,
-            "statusMessage": "usage-pacer: checking ceilings..."
+            "statusMessage": "headroom: checking ceilings..."
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/usage-pacer\" prompt"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" prompt"
           }
         ]
       }
