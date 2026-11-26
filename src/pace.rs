@@ -77,6 +77,7 @@ mod tests {
             grace_bp,
             color: ColorMode::None,
             ascii: false,
+            bottom_margin: 1,
         }
     }
 

@@ -69,6 +69,77 @@ pub fn active_bp(cfg: &Config, now: u64, window_reset: i64, day: u32) -> (i64, O
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Applied {
+    pub added_bp: i64,
+    pub total_bp: i64,
+    pub ceiling_bp: i64,
+    pub scope: Scope,
+    pub expires_at: i64,
+}
+
+/// Add `add_bp` to the active credit and persist it. Borrowing is additive:
+/// repeating it stacks until the weekly limit is reached.
+pub fn apply(
+    cfg: &Config,
+    now: u64,
+    reset: i64,
+    base: &Pace,
+    add_bp: i64,
+    want_week: bool,
+    note: Option<String>,
+) -> Result<Applied, String> {
+    if add_bp <= 0 {
+        return Err("borrow must be greater than 0%".into());
+    }
+    if add_bp > 10_000 {
+        return Err("borrow cannot exceed 100% of the weekly limit".into());
+    }
+
+    let (existing_bp, existing) = active_bp(cfg, now, reset, base.day);
+    let total_bp = (existing_bp + add_bp).clamp(0, 10_000);
+    let scope = if want_week
+        || existing
+            .as_ref()
+            .map(|c| c.scope == Scope::Week)
+            .unwrap_or(false)
+    {
+        Scope::Week
+    } else {
+        Scope::Day
+    };
+
+    let mut expires_at = match scope {
+        Scope::Week => reset,
+        Scope::Day => base.next_epoch,
+    };
+    if let Some(c) = &existing {
+        expires_at = expires_at.max(c.expires_at);
+    }
+
+    let note = note.or_else(|| existing.as_ref().and_then(|c| c.note.clone()));
+    let credit = Credit {
+        window_reset: reset,
+        day: base.day,
+        extra_bp: total_bp,
+        expires_at,
+        scope,
+        note,
+        created_at: now,
+    };
+    credit
+        .save(&cfg.credit)
+        .map_err(|e| format!("could not save credit: {e}"))?;
+
+    Ok(Applied {
+        added_bp: add_bp,
+        total_bp,
+        ceiling_bp: (base.ceiling_bp + total_bp).clamp(0, 10_000),
+        scope,
+        expires_at,
+    })
+}
+
 pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
     let sub = args.first().map(String::as_str).unwrap_or("status");
     match sub {
@@ -76,23 +147,23 @@ pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
             Credit::clear(&cfg.credit).map_err(|e| format!("could not clear credit: {e}"))?;
             Ok("usage-pacer: override cleared; the normal daily pace applies again.".into())
         }
-        "status" | "show" => status(cfg),
+        "status" | "show" => status_text(cfg),
         "help" | "--help" | "-h" => Err(usage()),
         raw => {
-            let extra_bp = pct_to_bp(raw).ok_or_else(|| format!("'{raw}' is not a percentage"))?;
-            if extra_bp <= 0 {
+            let add_bp = pct_to_bp(raw).ok_or_else(|| format!("'{raw}' is not a percentage"))?;
+            if add_bp <= 0 {
                 return Err("borrow must be greater than 0%".into());
             }
-            if extra_bp > 10_000 {
+            if add_bp > 10_000 {
                 return Err("borrow cannot exceed 100% of the weekly limit".into());
             }
 
-            let mut scope = Scope::Day;
+            let mut want_week = false;
             let mut note = None;
             let mut i = 1;
             while i < args.len() {
                 match args[i].as_str() {
-                    "--week" | "--until-reset" => scope = Scope::Week,
+                    "--week" | "--until-reset" => want_week = true,
                     "--note" => {
                         i += 1;
                         note = args.get(i).cloned();
@@ -118,50 +189,53 @@ pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
             let base = Pace::compute(cfg, week.used_bp, reset, now, 0).ok_or(
                 "the weekly window has already rolled over; wait for the next statusline tick",
             )?;
+            let previous =
+                (base.ceiling_bp + active_bp(cfg, now, reset, base.day).0).clamp(0, 10_000);
+            let applied = apply(cfg, now, reset, &base, add_bp, want_week, note)?;
 
-            let expires_at = match scope {
-                Scope::Week => reset,
-                Scope::Day => base.next_epoch,
-            };
-
-            let credit = Credit {
-                window_reset: reset,
-                day: base.day,
-                extra_bp,
-                expires_at,
-                scope,
-                note,
-                created_at: now,
-            };
-            credit
-                .save(&cfg.credit)
-                .map_err(|e| format!("could not save credit: {e}"))?;
-
-            let new_ceiling = (base.ceiling_bp + extra_bp).clamp(0, 10_000);
-            let scope_text = match scope {
+            let scope_text = match applied.scope {
                 Scope::Week => "the rest of the weekly window",
                 Scope::Day => "today",
             };
             let mut out = format!(
-                "usage-pacer: borrowed +{}% for {scope_text}.\n\
-                 day {}/{} ceiling: {}% -> {}% (max 100%).\n\
-                 Expires in {}. Future days keep their normal ceilings, so unused allowance repays the borrow.",
-                format_pct(extra_bp),
-                base.day,
-                base.week_days,
-                format_pct(base.ceiling_bp),
-                format_pct(new_ceiling),
-                duration(expires_at - now as i64),
+                "usage-pacer: added +{}% for {scope_text}",
+                format_pct(applied.added_bp)
             );
-            if let Some(n) = &credit.note {
-                out.push_str(&format!("\nnote: {n}"));
+            if applied.total_bp != applied.added_bp {
+                out.push_str(&format!(
+                    " (total +{}% borrowed).\n",
+                    format_pct(applied.total_bp)
+                ));
+            } else {
+                out.push_str(".\n");
             }
+            out.push_str(&format!(
+                "today's limit: {}% -> {}%.\n",
+                format_pct(previous),
+                format_pct(applied.ceiling_bp)
+            ));
+            let delta = week.used_bp - applied.ceiling_bp;
+            if delta > 0 {
+                out.push_str(&format!(
+                    "You are still {}% over today.\n",
+                    format_pct(delta)
+                ));
+            } else {
+                out.push_str(&format!(
+                    "You now have {}% left today.\n",
+                    format_pct(-delta)
+                ));
+            }
+            out.push_str(&format!(
+                "Expires in {}. Future days keep their normal limits, so unused allowance repays the borrow.",
+                duration(applied.expires_at - now as i64),
+            ));
             Ok(out)
         }
     }
 }
 
-fn status(cfg: &Config) -> Result<String, String> {
+pub fn status_text(cfg: &Config) -> Result<String, String> {
     let now = unix_now();
     let state = State::load(&cfg.state)
         .ok_or("no usage snapshot yet; start Claude Code once so the statusline can capture it")?;
@@ -175,36 +249,42 @@ fn status(cfg: &Config) -> Result<String, String> {
         .ok_or("the weekly window has already rolled over")?;
     let (extra, credit) = active_bp(cfg, now, reset, base.day);
 
-    if extra <= 0 {
-        return Ok(format!(
-            "usage-pacer: no active override. Day {}/{} ceiling is {}%, usage {}%.",
-            base.day,
-            base.week_days,
-            format_pct(base.ceiling_bp),
-            format_pct(week.used_bp)
-        ));
-    }
     let Some(c) = credit else {
-        return Ok(format!(
-            "usage-pacer: no active override. Day {}/{} ceiling is {}%, usage {}%.",
-            base.day,
-            base.week_days,
-            format_pct(base.ceiling_bp),
-            format_pct(week.used_bp)
-        ));
+        let delta = week.used_bp - base.ceiling_bp;
+        return Ok(if delta > 0 {
+            format!(
+                "usage-pacer: no active override. Today's limit is {}%; you are {}% over. Weekly usage {}%.",
+                format_pct(base.ceiling_bp),
+                format_pct(delta),
+                format_pct(week.used_bp)
+            )
+        } else {
+            format!(
+                "usage-pacer: no active override. Today's limit is {}%; {}% left. Weekly usage {}%.",
+                format_pct(base.ceiling_bp),
+                format_pct(-delta),
+                format_pct(week.used_bp)
+            )
+        });
     };
+
     let scope_text = match c.scope {
         Scope::Week => "rest of week",
         Scope::Day => "today",
     };
+    let limit = (base.ceiling_bp + extra).clamp(0, 10_000);
+    let delta = week.used_bp - limit;
+    let standing = if delta > 0 {
+        format!("{}% over", format_pct(delta))
+    } else {
+        format!("{}% left", format_pct(-delta))
+    };
     Ok(format!(
         "usage-pacer: +{}% borrowed for {scope_text} (expires in {}).\n\
-         Day {}/{} ceiling {}%, usage {}%{}.",
+         Today's limit is {}%; {standing}. Weekly usage {}%{}.",
         format_pct(extra),
         duration(c.expires_at - now as i64),
-        base.day,
-        base.week_days,
-        format_pct((base.ceiling_bp + extra).clamp(0, 10_000)),
+        format_pct(limit),
         format_pct(week.used_bp),
         c.note.map(|n| format!(", note: {n}")).unwrap_or_default()
     ))

@@ -1,8 +1,8 @@
 use crate::pace::Pace;
 use crate::style::{Accent, Theme};
-use crate::util::{duration, format_pct};
+use crate::util::{duration, format_pct, format_ratio};
 
-const LABEL_WIDTH: usize = 10;
+const LABEL_WIDTH: usize = 8;
 
 #[derive(Clone, Debug)]
 pub struct Snapshot {
@@ -31,27 +31,38 @@ pub fn dashboard(
     let mut header = format!(
         "{}{}{}",
         theme.dim("Usage"),
-        theme.dim(sep),
+        theme.faint(sep),
         theme.bold_color(Accent::Cyan, &snapshot.model)
     );
     if let Some(ctx) = snapshot.ctx_bp {
-        header.push_str(&theme.dim(sep));
-        header.push_str(&theme.dim("ctx "));
-        header.push_str(&theme.color(usage_accent(ctx), &format!("{}%", format_pct(ctx))));
+        header.push_str(&theme.faint(sep));
+        header.push_str(&theme.dim("context "));
+        let accent = usage_accent(ctx);
+        if theme.ascii() {
+            header.push_str(&theme.color(accent, &format!("{}%", format_pct(ctx))));
+        } else {
+            header.push_str(&theme.color(
+                accent,
+                &format!("{} {}%", context_circle(ctx), format_pct(ctx)),
+            ));
+        }
     }
     lines.push(header);
 
-    // Grid first, legend second: the compact /context dashboard shape.
-    let cells = width.saturating_sub(38).clamp(10, 20);
+    let cells = width.saturating_sub(38).clamp(10, 28);
 
     if let Some(five) = snapshot.five {
-        lines.push(window_row("5h", five, cells, theme, now));
+        lines.push(window_row("5-hour", five, cells, theme, now));
     }
     if let Some(week) = snapshot.week {
-        lines.push(window_row("7d", week, cells, theme, now));
+        lines.push(window_row("weekly", week, cells, theme, now));
     }
     if let Some(p) = pace {
-        lines.push(pace_row(p, cells, theme));
+        let (row, borrow_row) = today_row(p, cells, theme);
+        lines.push(row);
+        if let Some(borrow_row) = borrow_row {
+            lines.push(borrow_row);
+        }
     }
 
     lines.join("\n")
@@ -60,13 +71,12 @@ pub fn dashboard(
 fn window_row(label: &str, window: WindowView, cells: usize, theme: &Theme, now: u64) -> String {
     let accent = usage_accent(window.used_bp);
     let mut out = String::new();
-    out.push_str(&bar(window.used_bp, cells, theme, accent));
-    out.push_str("  ");
     out.push_str(&theme.dim(&format!("{label:<LABEL_WIDTH$}")));
+    out.push_str(&bar(window.used_bp, cells, theme, accent));
     out.push_str("  ");
     out.push_str(&theme.bold_color(
         accent,
-        &format!("{:>7}", format!("{}%", format_pct(window.used_bp))),
+        &format!("{:>6}", format!("{}%", format_pct(window.used_bp))),
     ));
     if let Some(reset) = window.resets_at {
         if reset > now as i64 {
@@ -79,51 +89,60 @@ fn window_row(label: &str, window: WindowView, cells: usize, theme: &Theme, now:
     out
 }
 
-fn pace_row(pace: &Pace, cells: usize, theme: &Theme) -> String {
-    let ratio = if pace.ceiling_bp > 0 {
-        (pace.used_bp.saturating_mul(10_000) / pace.ceiling_bp).clamp(0, 10_000)
+fn today_row(pace: &Pace, cells: usize, theme: &Theme) -> (String, Option<String>) {
+    // 100% = today's allowance exactly used; 120% = overspent by 20% of it.
+    let used_of_allowance = if pace.ceiling_bp > 0 {
+        pace.used_bp.saturating_mul(10_000) / pace.ceiling_bp
     } else {
         0
     };
-    let accent = if pace.over {
+    let accent = if used_of_allowance >= 10_000 {
         Accent::Red
-    } else if ratio >= 9_000 {
+    } else if used_of_allowance >= 9_000 {
         Accent::Yellow
     } else {
         Accent::Green
     };
+    let delta = pace.used_bp - pace.ceiling_bp;
 
-    let label = format!("pace d{}/{}", pace.day, pace.week_days);
     let mut out = String::new();
-    out.push_str(&bar(ratio, cells, theme, accent));
-    out.push_str("  ");
-    out.push_str(&theme.dim(&format!("{label:<LABEL_WIDTH$}")));
+    out.push_str(&theme.dim(&format!("{:<LABEL_WIDTH$}", "today")));
+    out.push_str(&bar(used_of_allowance, cells, theme, accent));
     out.push_str("  ");
     out.push_str(&theme.bold_color(
         accent,
-        &format!("{:>7}", format!("{}%", format_pct(pace.ceiling_bp))),
+        &format!("{:>6}", format!("{}%", format_ratio(used_of_allowance))),
     ));
-    out.push_str(&theme.dim(" cap"));
     out.push_str("  ");
-
-    if pace.over {
+    if delta > 0 {
         out.push_str(&theme.color(
             Accent::Red,
-            &format!("{} over", format_pct(pace.used_bp - pace.ceiling_bp)),
+            &format!("{}% extra of weekly", format_pct(delta)),
         ));
     } else {
         out.push_str(&theme.color(
             Accent::Green,
-            &format!("{} left", format_pct(pace.ceiling_bp - pace.used_bp)),
+            &format!("{}% left of weekly", format_pct(-delta)),
         ));
     }
-    if pace.credit_bp > 0 {
-        out.push_str(&theme.color(
-            Accent::Cyan,
-            &format!("  +{} borrowed", format_pct(pace.credit_bp)),
-        ));
-    }
-    out
+
+    let borrow_row = if pace.credit_bp > 0 {
+        Some(format!(
+            "{}  {} {}",
+            theme.dim(&format!("{:<LABEL_WIDTH$}", "")),
+            theme.color(
+                Accent::Cyan,
+                &format!("+{}% borrowed", format_pct(pace.credit_bp))
+            ),
+            theme.dim(&format!(
+                "· allowance {}% of weekly",
+                format_pct(pace.ceiling_bp)
+            ))
+        ))
+    } else {
+        None
+    };
+    (out, borrow_row)
 }
 
 fn bar(bp: i64, cells: usize, theme: &Theme, accent: Accent) -> String {
@@ -132,11 +151,11 @@ fn bar(bp: i64, cells: usize, theme: &Theme, accent: Accent) -> String {
     let (full, empty) = if theme.ascii() {
         ('#', '-')
     } else {
-        ('█', '░')
+        ('▰', '▱')
     };
     let fill = full.to_string().repeat(filled);
     let pad = empty.to_string().repeat(cells - filled);
-    format!("{}{}", theme.color(accent, &fill), theme.dim(&pad))
+    format!("{}{}", theme.color(accent, &fill), theme.faint(&pad))
 }
 
 fn usage_accent(bp: i64) -> Accent {
@@ -146,6 +165,17 @@ fn usage_accent(bp: i64) -> Accent {
         Accent::Yellow
     } else {
         Accent::Green
+    }
+}
+
+/// Small circular gauge for the context window.
+fn context_circle(bp: i64) -> &'static str {
+    match bp.clamp(0, 10_000) {
+        0 => "○",
+        1..=2_500 => "◔",
+        2_501..=5_000 => "◑",
+        5_001..=7_500 => "◕",
+        _ => "●",
     }
 }
 
@@ -173,13 +203,13 @@ mod tests {
     }
 
     #[test]
-    fn renders_header_and_rows_without_ansi() {
+    fn renders_plain_language_rows() {
         let snap = Snapshot {
             model: "Sonnet".into(),
             ctx_bp: Some(4_240),
             five: Some(WindowView {
                 used_bp: 1_200,
-                resets_at: Some(1_500),
+                resets_at: Some(3_000),
             }),
             week: Some(WindowView {
                 used_bp: 6_000,
@@ -187,12 +217,16 @@ mod tests {
             }),
         };
         let out = dashboard(&snap, Some(&pace()), &theme(), 1_000, 80);
-        assert!(out.starts_with("Usage · Sonnet · ctx 42.4%"));
-        assert!(out.contains("5h"));
-        assert!(out.contains("12%"));
-        assert!(out.contains("pace d4/7"));
-        assert!(out.contains("77.16% cap"));
-        assert!(out.contains("+20 borrowed"));
+        assert!(out.starts_with("Usage · Sonnet · context "));
+        assert!(out.contains("42.4%"));
+        assert!(out.contains("◑"));
+        assert!(out.contains("5-hour"));
+        assert!(out.contains("weekly"));
+        assert!(out.contains("today"));
+        assert!(out.contains("77.76%"));
+        assert!(out.contains("17.16% left of weekly"));
+        assert!(out.contains("+20% borrowed"));
+        assert!(out.contains("allowance 77.16% of weekly"));
         assert!(out.contains("resets in 33m"));
         assert!(!out.contains('\x1b'));
     }

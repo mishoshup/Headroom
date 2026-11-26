@@ -6,6 +6,8 @@ pub enum Accent {
     Green,
     Yellow,
     Red,
+    Muted,
+    Faint,
 }
 
 pub struct Theme {
@@ -29,8 +31,16 @@ impl Theme {
         }
     }
 
+    pub fn bold(&self, text: &str) -> String {
+        self.wrap("1", text)
+    }
+
     pub fn dim(&self, text: &str) -> String {
-        self.wrap("2", text)
+        self.color(Accent::Muted, text)
+    }
+
+    pub fn faint(&self, text: &str) -> String {
+        self.color(Accent::Faint, text)
     }
 
     pub fn bold_color(&self, accent: Accent, text: &str) -> String {
@@ -69,6 +79,8 @@ fn rgb(accent: Accent) -> (u8, u8, u8) {
         Accent::Green => (52, 211, 153),
         Accent::Yellow => (251, 191, 36),
         Accent::Red => (248, 113, 113),
+        Accent::Muted => (201, 209, 217),
+        Accent::Faint => (110, 118, 129),
     }
 }
 
@@ -78,6 +90,8 @@ fn ansi256(accent: Accent) -> u8 {
         Accent::Green => 48,
         Accent::Yellow => 214,
         Accent::Red => 203,
+        Accent::Muted => 252,
+        Accent::Faint => 242,
     }
 }
 
@@ -87,6 +101,8 @@ fn ansi16(accent: Accent) -> u8 {
         Accent::Green => 32,
         Accent::Yellow => 33,
         Accent::Red => 31,
+        Accent::Muted => 37,
+        Accent::Faint => 90,
     }
 }
 
@@ -98,7 +114,16 @@ mod tests {
     fn none_mode_emits_plain_text() {
         let t = Theme::new(ColorMode::None, false);
         assert_eq!(t.color(Accent::Cyan, "hi"), "hi");
+        assert_eq!(t.bold("hi"), "hi");
         assert_eq!(t.dim("hi"), "hi");
+        assert_eq!(t.faint("hi"), "hi");
+    }
+
+    #[test]
+    fn muted_and_faint_are_light_and_dark_greys() {
+        let t = Theme::new(ColorMode::TrueColor, false);
+        assert_eq!(t.dim("hi"), "\x1b[38;2;201;209;217mhi\x1b[0m");
+        assert_eq!(t.faint("hi"), "\x1b[38;2;110;118;129mhi\x1b[0m");
     }
 
     #[test]

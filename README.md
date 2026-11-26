@@ -1,79 +1,145 @@
 # usage-pacer
 
-A compiled Claude Code plugin that paces subscription usage across the weekly
-window instead of letting it burn out in a day.
+A weekly usage pacer for Claude Code.
 
-Claude Code reports a `seven_day` percentage and a reset time. The plugin
-treats the seven days before that reset as the budget window and gives day N
-an allowance of `daily_percent × N`:
+`usage-pacer` enforces a daily share of the weekly subscription allowance and
+reports how much of today's allowance remains. It is a single native Rust
+binary with no runtime dependencies.
+
+![usage-pacer status line and interactive borrow panel](docs/panel.png)
+
+## Overview
+
+Claude Code exposes the weekly rate-limit percentage and its reset time to the
+status-line command. `usage-pacer` divides the seven-day window into daily
+allowances:
 
 ```
 window_start = resets_at - 7 days
-day          = floor((now - window_start) / 1 day) + 1     # 1..7
-ceiling      = min(100, daily_percent × day) + grace + borrowed
+day          = floor((now - window_start) / 1 day) + 1
+allowance    = daily_percent × day
 ```
 
-Unused allowance carries forward; it is not lost at midnight. Day 1 starts
-with a full day of headroom, so a fresh window never blocks immediately.
+Day N receives N daily shares, so unused allowance carries forward. The
+default daily share is one seventh of the weekly allowance.
+
+The plugin provides two surfaces:
+
+1. A concise status line reporting weekly usage and today's position against
+   its allowance.
+2. An interactive panel for the detailed view and for borrowing additional
+   headroom.
+
+## Status line
 
 ```
-Usage · Sonnet · ctx 42.4%
-5h          ▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱     12%  ↻59m
-7d          ▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱     45%  ↻3d 11h
-pace d4/7   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱  57.16% cap  12.16 left
+Usage · Sonnet · context ◔ 12%
+weekly  ▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱     46%  resets in 4d 12h
+today   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  107.3%  3.13% extra of weekly
 ```
 
-The statusline is rendered by a single Rust binary: truecolor when the
-terminal advertises it, 256/16-color fallback, `NO_COLOR` and ASCII modes,
-and bar width derived from `COLUMNS`. Cold start is ~2 ms.
+The header and the bar rows share an eight-column label gutter, so `Sonnet`
+and every bar begin on the same column.
+
+The `today` row uses a 100% scale for today's allowance:
+
+- `100%` means the allowance is exactly consumed.
+- Values above `100%` indicate overspend, for example `120%`.
+- The trailing figure expresses the same position in weekly percentage
+  points: `3.13% extra of weekly`, or `12.16% left of weekly`.
+
+When a borrow is active, one subordinate row reports it:
+
+```
+          +20% borrowed · allowance 62.87% of weekly
+```
+
+## Interactive panel
+
+Run `usage-pacer` without arguments, or `usage-pacer borrow`, in a terminal.
+
+```
+usage-pacer  borrow extra headroom
+You are 3.13% over today's limit.  Weekly usage is 46%.
+────────────────────────────────────────────────
+weekly used ▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱    46%  resets in 4d 12h
+today limit ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  42.87%  3.13% over
+
+Borrow to get back under today's limit
+▸ +5%      gets you under   → limit 47.87% · 1.87% left
+  +10%    → limit 52.87% · 6.87% left
+  +15%    → limit 57.87% · 11.87% left
+  +20%    → limit 62.87% · 16.87% left
+  +25%    → limit 67.87% · 21.87% left
+  +30%                      → limit 72.87% · 26.87% left
+  custom amount…
+  clear current borrow
+  quit
+
+Selected: add +5%  →  limit 47.87%  ·  1.87% left  ·  expires in 12h 0m
+
+↑/↓ choose · enter confirm · w scope · c clear · q quit
+```
+
+Behaviour:
+
+- When usage is above the allowance, the first item is the smallest borrow
+  that returns the account below the limit.
+- Every option previews the resulting limit and the remaining or excess
+  amount.
+- `w` toggles the borrow scope between today and the remainder of the week.
+- `enter` applies the selected option; `c` clears the current borrow; `q`
+  exits.
 
 ## Borrowing headroom
 
-Sometimes you know a heavy day is followed by quiet ones. Borrow the
-difference instead of disabling the guard:
+A borrow adds percentage points of the weekly limit to the current allowance.
+Borrows are additive and expire automatically.
 
 ```bash
 ~/.claude/usage-pacer/usage-pacer borrow 20
 ```
 
 ```
-usage-pacer: borrowed +20% for today.
-day 4/7 ceiling: 57.16% -> 77.16% (max 100%).
-Expires in 11h 59m. Future days keep their normal ceilings, so unused
+usage-pacer: added +20% for today.
+today's limit: 42.87% -> 62.87%.
+You now have 16.87% left today.
+Expires in 11h 59m. Future days keep their normal limits, so unused
 allowance repays the borrow.
 ```
 
-- `borrow 20` — add 20 percentage points until the next day boundary.
+Options:
+
+- `borrow 20` — add 20 points until the next day boundary.
 - `borrow 15 --week` — add 15 points until the weekly reset.
-- `borrow 10 --note "off Fri-Sat"` — attach a note to the credit.
-- `borrow status` — show the active override.
+- `borrow 10 --note "off Friday and Saturday"` — attach a note.
+- `borrow status` — display the active borrow.
 - `borrow clear` — remove it.
 
-Credits live in `~/.claude/usage-pacer/credit.json`, keyed to the weekly
-reset and day, so they expire on their own. Future days keep their normal
-ceilings; the carry-forward pace absorbs the debt naturally. Inside Claude
-Code you can use `/usage-pacer:borrow 20` or `!~/.claude/usage-pacer/usage-pacer borrow 20`.
+The credit is stored in `~/.claude/usage-pacer/credit.json`, keyed to the
+weekly reset and day. Inside Claude Code, `/usage-pacer:borrow 20` and
+`!~/.claude/usage-pacer/usage-pacer borrow 20` provide the same command.
 
 ## Enforcement
 
-When weekly usage is above the ceiling:
+When weekly usage is above the current allowance:
 
-- `PreToolUse` denies tool calls, naming the day, ceiling and unlock time.
-- `UserPromptSubmit` blocks new prompts (`/` and `!` always pass so you can
-  inspect usage, borrow, or recover).
-- The pace row turns red and shows how far over you are.
+- `PreToolUse` denies tool calls and reports today's limit and the next
+  allowance time.
+- `UserPromptSubmit` blocks new prompts. Slash commands and `!` shell commands
+  remain available so that usage can be inspected and the allowance can be
+  adjusted.
+- The status line marks the `today` row in red and states the excess.
 
-A separate 5-hour ceiling is enforced at the same time (default 98%).
+A separate 5-hour ceiling is enforced at 98% by default.
 
-## Requirements
+## Installation
 
-- Claude Code 2.1+ with a Pro or Max subscription (rate-limit data is not
-  exposed for API-key auth)
-- Rust 1.70+ to build (there is no runtime dependency)
-- `jq` for the installer only
+Requirements:
+
+- Claude Code 2.1 or later with a Pro, Max, or Ultra subscription
+- Rust 1.74 or later to build; `jq` for the installer
 - macOS, Linux, or WSL
-
-## Install
 
 ```bash
 claude plugin marketplace add ~/Developer/usage-pacer
@@ -81,105 +147,82 @@ claude plugin install usage-pacer@usage-pacer-local
 bash ~/Developer/usage-pacer/scripts/install.sh
 ```
 
-Or run `/usage-pacer:setup` inside Claude Code. The installer builds the
-release binary, copies it to `~/.claude/usage-pacer/usage-pacer` and
-`<plugin>/bin/usage-pacer` (used by the hooks), backs up `settings.json`,
-and wires the statusline with `padding: 1`. Restart Claude Code afterwards.
+Alternatively, run `/usage-pacer:setup` inside Claude Code. The installer
+builds the release binary, installs it under `~/.claude/usage-pacer/`, copies
+the hook binary into the plugin directory, takes a timestamped backup of
+`settings.json`, and configures the status line. Claude Code must be
+restarted after installation so that the hooks are loaded.
 
-If a different statusline is already configured, the installer leaves it
-alone; use `--force` to replace it.
+If a different status line is already configured, the installer leaves it
+untouched. Pass `--force` to replace it.
 
 ## Configuration
 
-Set these in the environment that launches Claude Code, then restart.
+Environment variables are read by the binary at invocation. They must be set
+in the environment that launches Claude Code.
 
-| Variable | Default | Meaning |
+| Variable | Default | Purpose |
 |---|---|---|
-| `PACER_DAILY_PERCENT` | `100 / 7` (14.29) | Percentage points of the weekly limit per day. |
-| `PACER_WEEKLY_TARGET` | `100` | Weekly percent to spread when `PACER_DAILY_PERCENT` is unset. |
-| `PACER_PACING` | `on` | `off` disables the weekly pace guard. |
-| `PACER_PACING_GRACE` | `0` | Extra points of slack before blocking. |
-| `PACER_BLOCK_PROMPTS` | `1` | `0` blocks tools only, not new prompts. |
-| `PACER_FIVE_HOUR_LIMIT` | `98` | 5-hour ceiling, in percent. |
-| `PACER_FIVE_HOUR_MODE` | `block` | `wait` sleeps until the 5-hour reset instead. |
-| `PACER_STALE_AFTER` | `900` | Ignore snapshots older than this many seconds. |
-| `PACER_WEEK_DAYS` | `7` | Window length in days. |
-| `PACER_COLOR` | auto | `off`, `16`, `256`, `truecolor`; `NO_COLOR` also disables. |
-| `PACER_ASCII` | `0` | `1` for ASCII bars/glyphs. |
+| `PACER_DAILY_PERCENT` | `100 / 7` (14.29) | Percentage points of the weekly limit granted per day. |
+| `PACER_WEEKLY_TARGET` | `100` | Weekly percentage to distribute when `PACER_DAILY_PERCENT` is unset. |
+| `PACER_PACING` | `on` | Set to `off` to disable the weekly pace guard. |
+| `PACER_PACING_GRACE` | `0` | Additional points of tolerance before blocking. |
+| `PACER_BLOCK_PROMPTS` | `1` | Set to `0` to block tools only. |
+| `PACER_FIVE_HOUR_LIMIT` | `98` | Five-hour ceiling, in percent. |
+| `PACER_FIVE_HOUR_MODE` | `block` | `wait` sleeps until the five-hour reset instead of denying. |
+| `PACER_STALE_AFTER` | `900` | Maximum snapshot age, in seconds. |
+| `PACER_WEEK_DAYS` | `7` | Window length, in days. |
+| `PACER_COLOR` | automatic | `off`, `16`, `256`, or `truecolor`. `NO_COLOR` also disables colour. |
+| `PACER_ASCII` | `0` | Set to `1` for ASCII bars and glyphs. |
+| `PACER_BOTTOM_MARGIN` | `1` | Blank rows between the status line and the built-in footer (0–3). |
 | `PACER_STATE` | `~/.claude/usage-pacer/state` | Snapshot path. |
-| `PACER_CREDIT` | `~/.claude/usage-pacer/credit.json` | Override credit path. |
+| `PACER_CREDIT` | `~/.claude/usage-pacer/credit.json` | Borrow-credit path. |
 
-Examples:
+## Failure behaviour
 
-```bash
-export PACER_DAILY_PERCENT=12   # 84% of the weekly limit, spread evenly
-export PACER_DAILY_PERCENT=15   # 100% by day 7 (clamped), roomier early days
-export PACER_ASCII=1            # only ASCII glyphs
-claude
-```
+- The guard fails open when the snapshot is absent, malformed, or older than
+  `PACER_STALE_AFTER`. A broken meter must not prevent work.
+- The status line is the source of the rate-limit snapshot; if the status
+  line is not configured, enforcement is inactive.
+- State and credit writes are atomic (temporary file followed by rename).
+- Day boundaries are anchored to the weekly reset instant, not local
+  midnight.
 
-## How it behaves
-
-- **Fail open.** Missing, malformed or stale data allows work. A broken meter
-  must not brick the editor.
-- **The statusline is the data source.** Claude Code exposes `rate_limits`
-  only to the statusline command, so hooks read the snapshot it writes. If
-  the statusline is not wired, nothing is enforced.
-- **Atomic state.** One JSON snapshot and one credit file, written via
-  temp-file + rename.
-- **Day boundaries are anchored to the reset instant**, not local midnight.
-- **Subagents** share the same snapshot and ceilings.
-- **Recovery:** `/`, `!`, `borrow`, `borrow clear`, or
-  `claude plugin disable usage-pacer@usage-pacer-local`.
-
-## Files
+## Development
 
 ```
 src/
   main.rs        subcommand dispatch
-  config.rs      env config + colour capability detection
-  state.rs       usage snapshot (serde, atomic write)
-  pace.rs        day/ceiling maths + borrow credit
-  credit.rs      override persistence and CLI
-  render.rs      adaptive /context-style dashboard
-  style.rs       truecolor / 256 / 16 / plain SGR
-  hook.rs        pretool + prompt enforcement
-  statusline.rs  stdin JSON -> snapshot -> dashboard
-hooks/hooks.json PreToolUse + UserPromptSubmit registrations
-scripts/install.sh  build, install, settings backup, statusline wiring
+  config.rs      environment configuration and colour detection
+  state.rs       usage snapshot with atomic persistence
+  pace.rs        allowance arithmetic
+  credit.rs      borrow persistence and CLI
+  render.rs      status-line rendering
+  style.rs       truecolor, 256-colour, 16-colour, and plain output
+  hook.rs        PreToolUse and UserPromptSubmit enforcement
+  statusline.rs  status-line input handling
+  ui.rs          interactive borrow panel
+hooks/hooks.json command registrations
+scripts/install.sh build, install, settings backup, status-line wiring
 tests/cli.rs     end-to-end behaviour tests
 ```
 
-## Tests
+The runtime contract is documented in [docs/CONTRACT.md](docs/CONTRACT.md).
+Architecture decisions are recorded in
+[docs/adr](docs/adr/0001-rust-binary-flat-state.md).
+
+Quality gates:
 
 ```bash
-cargo test --release      # unit + CLI integration tests
-cargo run --release -- self-test
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test --release
 ```
 
-## Development standards
+The crate forbids `unsafe` and denies `todo!`, `unimplemented!`, and `dbg!`.
+The minimum supported Rust version is 1.74. CI runs formatting, linting,
+tests, and a release build on every push.
 
-- Formatting: `cargo fmt --check` (rustfmt config in `rustfmt.toml`).
-- Lints: `cargo clippy --all-targets -- -D warnings`; `unsafe` is forbidden and
-  `todo!`/`unimplemented!`/`dbg!` are denied at the crate level.
-- MSRV: Rust 1.74.
-- Runtime paths must not panic: hooks fail open on any parse/IO error, and
-  test-only `unwrap` is kept out of `main`/hook/statusline code.
-- `cargo test --release` covers pace maths, credit expiry, rendering modes and
-  each CLI subcommand end to end.
-- CI runs fmt, clippy, tests and a release build on every push.
-
-## Uninstall
-
-```bash
-claude plugin uninstall usage-pacer@usage-pacer-local
-claude plugin marketplace remove usage-pacer-local
-rm -rf ~/.claude/usage-pacer
-```
-
-Remove the `statusLine` key from `~/.claude/settings.json` if you do not
-replace it with another one.
-
-## License
+## Licence
 
 MIT © 2026 danialhaikal

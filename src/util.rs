@@ -7,9 +7,10 @@ pub fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Basis points -> compact percent text. 4286 -> "42.86", 4500 -> "45".
-pub fn format_pct(bp: i64) -> String {
-    let bp = bp.clamp(0, 10_000);
+/// Basis points -> compact percent text without a 100% clamp, for ratios such
+/// as "107.3% of today's allowance".
+pub fn format_ratio(bp: i64) -> String {
+    let bp = bp.max(0);
     let whole = bp / 100;
     let frac = bp % 100;
     if frac == 0 {
@@ -19,6 +20,11 @@ pub fn format_pct(bp: i64) -> String {
     } else {
         format!("{whole}.{frac:02}")
     }
+}
+
+/// Basis points -> compact percent text. 4286 -> "42.86", 4500 -> "45".
+pub fn format_pct(bp: i64) -> String {
+    format_ratio(bp.clamp(0, 10_000))
 }
 
 /// Seconds -> "1d 5h", "3h 12m", "59m".
@@ -42,5 +48,17 @@ pub fn f64_to_bp(v: f64) -> Option<i64> {
         Some((v * 100.0).round() as i64)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ratios_can_exceed_one_hundred() {
+        assert_eq!(format_ratio(10_730), "107.3");
+        assert_eq!(format_ratio(12_000), "120");
+        assert_eq!(format_pct(10_730), "100");
     }
 }

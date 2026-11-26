@@ -6,6 +6,7 @@ mod render;
 mod state;
 mod statusline;
 mod style;
+mod ui;
 mod util;
 
 use serde_json::json;
@@ -19,6 +20,7 @@ fn main() -> ExitCode {
     let command = std::env::args().nth(1).unwrap_or_default();
 
     match command.as_str() {
+        "" | "ui" => run_ui(&cfg),
         "statusline" => {
             println!("{}", statusline::run(&cfg));
             ExitCode::SUCCESS
@@ -50,6 +52,9 @@ fn main() -> ExitCode {
         },
         "borrow" | "override" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
+            if args.is_empty() {
+                return run_ui(&cfg);
+            }
             match credit::cli(&cfg, &args) {
                 Ok(message) => {
                     println!("{message}");
@@ -64,16 +69,32 @@ fn main() -> ExitCode {
         "self-test" => self_test(),
         "help" | "--help" | "-h" => {
             println!(
-                "usage: usage-pacer <statusline|pretool|prompt|borrow|self-test>\n\
-                 \x20      usage-pacer borrow <percent> [--week] [--note text]\n\
-                 \x20      usage-pacer borrow status\n\
-                 \x20      usage-pacer borrow clear"
+                "usage: usage-pacer [ui]              interactive borrow panel\n\
+                 \x20      usage-pacer statusline       statusline renderer\n\
+                 \x20      usage-pacer borrow <pct>     borrow headroom non-interactively\n\
+                 \x20      usage-pacer borrow status    show the active credit\n\
+                 \x20      usage-pacer borrow clear     remove the credit\n\
+                 \x20      usage-pacer self-test        maths sanity checks"
             );
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: usage-pacer <statusline|pretool|prompt|borrow|self-test>");
+            eprintln!("usage: usage-pacer [ui|statusline|borrow|self-test]");
             ExitCode::from(64)
+        }
+    }
+}
+
+fn run_ui(cfg: &Config) -> ExitCode {
+    match ui::run(cfg) {
+        Ok(Some(message)) => {
+            println!("{message}");
+            ExitCode::SUCCESS
+        }
+        Ok(None) => ExitCode::SUCCESS,
+        Err(message) => {
+            eprintln!("{message}");
+            ExitCode::FAILURE
         }
     }
 }

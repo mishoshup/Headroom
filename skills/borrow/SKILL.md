@@ -12,4 +12,6 @@ Run the installed binary with the user's arguments and report the output verbati
 
 - No arguments: run `~/.claude/usage-pacer/usage-pacer borrow status`.
 - Examples: `borrow 20`, `borrow 15 --week`, `borrow clear`.
+- The interactive panel is for a real terminal: run `usage-pacer` or
+  `usage-pacer borrow` there. Inside Claude Code's Bash tool it prints status.
 - The credit is stored in `~/.claude/usage-pacer/credit.json` and expires automatically at the next day boundary (or at the weekly reset with `--week`).

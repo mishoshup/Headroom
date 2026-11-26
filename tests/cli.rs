@@ -83,6 +83,20 @@ fn weekly_pace_allows_and_denies() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains(r#""permissionDecision":"deny""#));
     assert!(text.contains("day-4 ceiling"));
+
+    let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        parsed["hookSpecificOutput"]["hookEventName"],
+        serde_json::json!("PreToolUse")
+    );
+    assert_eq!(
+        parsed["hookSpecificOutput"]["permissionDecision"],
+        serde_json::json!("deny")
+    );
+    assert!(parsed["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap()
+        .contains("weekly usage"));
 }
 
 #[test]
@@ -121,6 +135,23 @@ fn five_hour_ceiling_and_stale_state() {
 }
 
 #[test]
+fn wait_mode_denies_when_reset_exceeds_max_wait() {
+    let home = home("wait-cap");
+    let reset = now() as i64 + 3_600;
+    write_state(&home, now(), Some((9_900, reset)), None);
+
+    let out = run(
+        &home,
+        &["pretool"],
+        None,
+        &[("PACER_FIVE_HOUR_MODE", "wait"), ("PACER_MAX_SLEEP", "1")],
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains(r#""permissionDecision":"deny""#));
+    assert!(text.contains("maximum wait"));
+}
+
+#[test]
 fn prompt_blocks_and_slash_commands_pass() {
     let home = home("prompt");
     let reset = now() as i64 + 3 * 86_400 + 43_200;
@@ -152,15 +183,23 @@ fn statusline_writes_state_and_borrow_lifts_the_ceiling() {
     write_state(&home, now(), None, Some((4_500, week_reset)));
     let out = run(&home, &["borrow", "20"], None, &[]);
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("borrowed +20%"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("added +20%"));
+
+    let out = run(&home, &["borrow", "5"], None, &[]);
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("total +25%"));
+    assert!(text.contains("82.16%"));
 
     let payload = statusline_payload(five_reset, week_reset);
     let out = run(&home, &["statusline"], Some(&payload), &[]);
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("Usage · Sonnet"));
-    assert!(text.contains("pace d4/7"));
-    assert!(text.contains("+20 borrowed"));
+    assert!(text.contains("Sonnet"));
+    assert!(text.contains("today"));
+    assert!(text.contains("54.77%"));
+    assert!(text.contains("37.16% left of weekly"));
+    assert!(text.contains("+25% borrowed"));
 
     let state: serde_json::Value =
         serde_json::from_slice(&fs::read(home.join("state")).unwrap()).unwrap();
@@ -179,4 +218,19 @@ fn self_test_passes() {
     let out = run(&home, &["self-test"], None, &[]);
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("self-test passed"));
+}
+
+#[test]
+fn ui_falls_back_to_status_without_a_tty() {
+    let home = home("ui-fallback");
+    let reset = now() as i64 + 3 * 86_400 + 43_200;
+    write_state(&home, now(), None, Some((4_500, reset)));
+
+    let out = run(&home, &[], None, &[]);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("no active override"));
+
+    let out = run(&home, &["borrow"], None, &[]);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("no active override"));
 }

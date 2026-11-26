@@ -32,6 +32,7 @@ pub struct Config {
     pub grace_bp: i64,
     pub color: ColorMode,
     pub ascii: bool,
+    pub bottom_margin: u32,
 }
 
 impl Config {
@@ -70,6 +71,7 @@ impl Config {
         let color = detect_color();
         let ascii = env_bool("PACER_ASCII", false)
             || env::var("TERM").map(|t| t == "dumb").unwrap_or(false);
+        let bottom_margin = env_u64("PACER_BOTTOM_MARGIN", 1).min(3) as u32;
 
         Self {
             state,
@@ -87,6 +89,7 @@ impl Config {
             grace_bp,
             color,
             ascii,
+            bottom_margin,
         }
     }
 
@@ -196,6 +199,7 @@ mod tests {
             grace_bp: 0,
             color: ColorMode::None,
             ascii: false,
+            bottom_margin: 1,
         };
         assert_eq!(cfg.daily_bp(), 1429);
     }

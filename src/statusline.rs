@@ -114,7 +114,13 @@ pub fn run(cfg: &Config) -> String {
         .saturating_sub(4)
         .max(40);
     let theme = Theme::new(cfg.color, cfg.ascii);
-    render::dashboard(&snapshot, pace.as_ref(), &theme, now, width)
+    let mut output = render::dashboard(&snapshot, pace.as_ref(), &theme, now, width);
+    // Each blank visual row is a non-whitespace glyph so Claude Code keeps it.
+    for _ in 0..cfg.bottom_margin {
+        output.push('\n');
+        output.push('\u{2800}');
+    }
+    output
 }
 
 fn to_window(window: &RateWindow) -> Option<Window> {

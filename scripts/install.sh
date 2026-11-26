@@ -59,7 +59,7 @@ cp "$SETTINGS" "$backup"
 
 tmp="$SETTINGS.tmp.$$"
 jq --arg cmd "$DEST statusline" --argjson ri "$REFRESH" \
-  '.statusLine = {type: "command", command: $cmd, refreshInterval: $ri, padding: 1}' \
+  '.statusLine = {type: "command", command: $cmd, refreshInterval: $ri}' \
   "$SETTINGS" > "$tmp" && mv -f "$tmp" "$SETTINGS"
 
 echo "usage-pacer: installed $DEST"

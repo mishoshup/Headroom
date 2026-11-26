@@ -46,13 +46,24 @@ pub fn pretool(cfg: &Config) -> Decision {
                     let Some(reset) = five.resets_at else {
                         return Decision::Deny(five_reason(cfg, &five, now));
                     };
-                    let secs = (reset - now as i64 + cfg.reset_buffer as i64)
-                        .clamp(1, cfg.max_sleep as i64) as u64;
+                    let nap = reset - now as i64 + cfg.reset_buffer as i64;
+                    if nap <= 0 {
+                        let _ = fs::remove_file(&cfg.state);
+                        return Decision::Allow;
+                    }
+                    if nap > cfg.max_sleep as i64 {
+                        return Decision::Deny(format!(
+                            "usage-pacer: the 5-hour window is at {}%; the reset is {} away, longer than the configured maximum wait of {}. The call is denied instead of sleeping partially. Retry after the reset, or set PACER_FIVE_HOUR_MODE=block.",
+                            format_pct(five.used_bp),
+                            duration(nap),
+                            duration(cfg.max_sleep as i64)
+                        ));
+                    }
                     eprintln!(
-                        "usage-pacer: 5h at {}%; sleeping {secs}s for the reset.",
+                        "usage-pacer: 5h at {}%; sleeping {nap}s for the reset.",
                         format_pct(five.used_bp)
                     );
-                    std::thread::sleep(Duration::from_secs(secs));
+                    std::thread::sleep(Duration::from_secs(nap as u64));
                     let _ = fs::remove_file(&cfg.state);
                     return Decision::Allow;
                 }
