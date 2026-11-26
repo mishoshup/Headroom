@@ -34,12 +34,16 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add ${{ matrix.target }}
       - run: cargo build --release --target ${{ matrix.target }}
-      - name: Package
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           asset="headroom-${{ matrix.target }}.tar.gz"
@@ -50,8 +54,37 @@ jobs:
           else
             shasum -a 256 "$asset" > "$asset.sha256"
           fi
-      - name: Upload
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $asset = "headroom-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/headroom.exe" -DestinationPath "dist/$asset" -Force
+          $hash = (Get-FileHash "dist/$asset" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $asset" | Out-File -Encoding ascii "dist/$asset.sha256"
+
+      - name: Upload (Unix)
+        if: runner.os != 'Windows'
         run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+
+      - name: Upload (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: gh release upload $env:GITHUB_REF_NAME (Get-ChildItem dist | ForEach-Object { $_.FullName }) --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}

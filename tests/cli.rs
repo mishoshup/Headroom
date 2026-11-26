@@ -249,7 +249,9 @@ fn setup_wires_statusline_and_preserves_settings() {
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
     assert_eq!(value["theme"], serde_json::json!("dark"));
     let command = value["statusLine"]["command"].as_str().unwrap();
-    assert!(command.ends_with("headroom statusline"));
+    assert!(
+        command.ends_with("headroom statusline") || command.ends_with("headroom.exe statusline")
+    );
     assert_eq!(
         value["statusLine"]["refreshInterval"],
         serde_json::json!(60)
@@ -297,10 +299,16 @@ fn setup_respects_an_existing_statusline() {
     );
     assert!(out.status.success());
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
-    assert!(value["statusLine"]["command"]
-        .as_str()
-        .unwrap()
-        .ends_with("headroom statusline"));
+    assert!(
+        value["statusLine"]["command"]
+            .as_str()
+            .unwrap()
+            .ends_with("headroom statusline")
+            || value["statusLine"]["command"]
+                .as_str()
+                .unwrap()
+                .ends_with("headroom.exe statusline")
+    );
 }
 
 #[test]

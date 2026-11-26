@@ -7,7 +7,7 @@ The 1.x series receives security fixes.
 ## Reporting
 
 Report vulnerabilities privately through GitHub Security Advisories on
-`mishoshup/Headroom`. Do not open a public issue for a vulnerability.
+`mishoshup/headroom`. Do not open a public issue for a vulnerability.
 
 Include the affected version, the platform, the command or hook involved, and a
 minimal reproduction.

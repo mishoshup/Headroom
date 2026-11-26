@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_DIR="${HEADROOM_HOME:-$HOME/.claude/headroom}"
 DEST="$DEST_DIR/headroom"
 REFRESH="${HEADROOM_REFRESH:-60}"
-REPO="mishoshup/Headroom"
+REPO="mishoshup/headroom"
 FORCE=0
 BUILD=0
 

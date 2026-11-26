@@ -1,6 +1,6 @@
 # Headroom
 
-[![CI](https://github.com/mishoshup/Headroom/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/Headroom/actions/workflows/ci.yml)
+[![CI](https://github.com/mishoshup/headroom/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/headroom/actions/workflows/ci.yml)
 
 Weekly usage pacing for Claude Code, maintained by
 [Mishoshup](https://github.com/mishoshup).
@@ -142,21 +142,19 @@ A separate 5-hour ceiling is enforced at 98% by default.
 Requirements:
 
 - Claude Code 2.1 or later with a Pro, Max, or Ultra subscription
-- `curl` and `tar` for the prebuilt installation
+- `curl` and `tar` for the prebuilt installation on macOS/Linux
+- PowerShell 5.1+ for the prebuilt installation on Windows
 - Rust 1.74 or later only when installing from source with `--build`
-- macOS, Linux, or WSL
-
-Native Windows is not packaged in 1.0.0. The binary is portable Rust, but the
-installer is POSIX and the release has no `.exe` asset yet; use WSL for now.
+- macOS, Linux, WSL, or Windows 10/11
 
 ```bash
-claude plugin marketplace add mishoshup/Headroom
+claude plugin marketplace add mishoshup/headroom
 claude plugin install headroom@mishoshup
 ```
 
 Then run `/headroom:setup` inside Claude Code. The setup skill downloads the
-matching prebuilt binary for the platform; no Rust toolchain is required. For a
-local checkout:
+matching prebuilt binary for the platform (PowerShell on Windows, Bash
+elsewhere); no Rust toolchain is required. For a local checkout:
 
 ```bash
 claude plugin marketplace add ~/Developer/headroom
@@ -175,6 +173,21 @@ untouched. Pass `--force` to replace it.
 The binary is installed at `~/.claude/headroom/headroom` and is **not**
 added to `PATH`. The hooks invoke it by absolute path, and all borrow commands
 in this document use that absolute path.
+
+## CLI-only installation
+
+The same release assets can be installed by a general binary installer:
+
+```bash
+mise use -g ubi:mishoshup/headroom
+# or, with Rust installed:
+cargo binstall --git https://github.com/mishoshup/headroom
+headroom setup
+```
+
+This installs the CLI and can wire the status line, but Claude Code's plugin
+hooks still require the plugin setup above; use `/headroom:setup` for the full
+installation.
 
 ## Configuration
 
