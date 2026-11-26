@@ -35,7 +35,8 @@ fn write_state(home: &Path, captured: u64, five: Option<(i64, i64)>, week: Optio
 }
 
 fn run(home: &Path, args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_headroom"));
+    let bin = env!("CARGO_BIN_EXE_headroom");
+    let mut command = Command::new(bin);
     command
         .args(args)
         .env("HEADROOM_HOME", home)
@@ -226,6 +227,80 @@ fn self_test_passes() {
     let out = run(&home, &["self-test"], None, &[]);
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("self-test passed"));
+}
+
+#[test]
+fn setup_wires_statusline_and_preserves_settings() {
+    let home = home("setup");
+    let config = home.join("claude");
+    fs::create_dir_all(&config).unwrap();
+    let settings = config.join("settings.json");
+    fs::write(&settings, r#"{"theme":"dark"}"#).unwrap();
+
+    let out = run(
+        &home,
+        &["setup"],
+        None,
+        &[("CLAUDE_CONFIG_DIR", config.to_str().unwrap())],
+    );
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("statusline wired"));
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+    assert_eq!(value["theme"], serde_json::json!("dark"));
+    let command = value["statusLine"]["command"].as_str().unwrap();
+    assert!(command.ends_with("headroom statusline"));
+    assert_eq!(
+        value["statusLine"]["refreshInterval"],
+        serde_json::json!(60)
+    );
+
+    let backups = fs::read_dir(&config)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".bak."))
+        .count();
+    assert!(backups >= 1);
+}
+
+#[test]
+fn setup_respects_an_existing_statusline() {
+    let home = home("setup-existing");
+    let config = home.join("claude");
+    fs::create_dir_all(&config).unwrap();
+    let settings = config.join("settings.json");
+    fs::write(
+        &settings,
+        r#"{"statusLine":{"type":"command","command":"/other/statusline"}}"#,
+    )
+    .unwrap();
+
+    let out = run(
+        &home,
+        &["setup"],
+        None,
+        &[("CLAUDE_CONFIG_DIR", config.to_str().unwrap())],
+    );
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("leaving it alone"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+    assert_eq!(
+        value["statusLine"]["command"],
+        serde_json::json!("/other/statusline")
+    );
+
+    let out = run(
+        &home,
+        &["setup", "--force"],
+        None,
+        &[("CLAUDE_CONFIG_DIR", config.to_str().unwrap())],
+    );
+    assert!(out.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+    assert!(value["statusLine"]["command"]
+        .as_str()
+        .unwrap()
+        .ends_with("headroom statusline"));
 }
 
 #[test]

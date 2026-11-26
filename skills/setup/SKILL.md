@@ -11,6 +11,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"
 
 Report what it prints.
 
-- It builds the release binary, copies it to `~/.claude/headroom/headroom`, installs a copy for the plugin hooks, and only touches the `statusLine` key in `settings.json` after taking a timestamped backup.
-- If it reports an existing statusline was left alone, relay the exact `--force` instructions.
-- Re-running after an update rebuilds and refreshes both copies.
+- The installer downloads the matching prebuilt release binary and verifies its
+  SHA-256 checksum. No Rust toolchain is required.
+- It installs `~/.claude/headroom/headroom`, copies the hook binary into the
+  plugin directory, and calls `headroom setup` to wire `settings.json` after a
+  timestamped backup.
+- If it reports an existing statusline was left alone, relay the exact
+  `--force` instructions.
+- If the platform has no prebuilt asset, it falls back to a source build when
+  Cargo is available.

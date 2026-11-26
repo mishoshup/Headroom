@@ -15,6 +15,7 @@ matching update here.
 | `headroom borrow <pct> [--week] [--note text]` | Confirmation text | 0, 1 on failure |
 | `headroom borrow status` | Active credit text | 0, 1 on failure |
 | `headroom borrow clear` | Confirmation text | 0, 1 on failure |
+| `headroom setup [--force]` | Status-line configuration message | 0, 1 on failure |
 | `headroom self-test` | `self-test passed` | 0, 1 on failure |
 | `headroom help` | Usage text | 0 |
 

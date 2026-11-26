@@ -1,6 +1,6 @@
 # Headroom
 
-[![CI](https://github.com/mishoshup/headroom/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/headroom/actions/workflows/ci.yml)
+[![CI](https://github.com/mishoshup/Headroom/actions/workflows/ci.yml/badge.svg)](https://github.com/mishoshup/Headroom/actions/workflows/ci.yml)
 
 Weekly usage pacing for Claude Code, maintained by
 [Mishoshup](https://github.com/mishoshup).
@@ -142,26 +142,29 @@ A separate 5-hour ceiling is enforced at 98% by default.
 Requirements:
 
 - Claude Code 2.1 or later with a Pro, Max, or Ultra subscription
-- Rust 1.74 or later to build; `jq` for the installer
+- `curl` and `tar` for the prebuilt installation
+- Rust 1.74 or later only when installing from source with `--build`
 - macOS, Linux, or WSL
 
 ```bash
-claude plugin marketplace add mishoshup/headroom
+claude plugin marketplace add mishoshup/Headroom
 claude plugin install headroom@mishoshup
 ```
 
-Then run `/headroom:setup` inside Claude Code. For a local checkout:
+Then run `/headroom:setup` inside Claude Code. The setup skill downloads the
+matching prebuilt binary for the platform; no Rust toolchain is required. For a
+local checkout:
 
 ```bash
 claude plugin marketplace add ~/Developer/headroom
 claude plugin install headroom@mishoshup
-bash ~/Developer/headroom/scripts/install.sh
+bash ~/Developer/headroom/scripts/install.sh --build
 ```
 
-The installer builds the release binary, installs it under
-`~/.claude/headroom/`, copies the hook binary into the plugin directory,
-takes a timestamped backup of `settings.json`, and configures the status line.
-Claude Code must be restarted after installation so that the hooks are loaded.
+The installer places the binary under `~/.claude/headroom/`, copies the hook
+binary into the plugin directory, backs up `settings.json`, and calls the
+binary's own `setup` command to wire the status line. Claude Code must be
+restarted after installation so that the hooks are loaded.
 
 If a different status line is already configured, the installer leaves it
 untouched. Pass `--force` to replace it.

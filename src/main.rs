@@ -3,6 +3,7 @@ mod credit;
 mod hook;
 mod pace;
 mod render;
+mod setup;
 mod state;
 mod statusline;
 mod style;
@@ -65,6 +66,16 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "setup" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            match setup::run(&args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    eprintln!("headroom: {message}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         "self-test" => self_test(),
         "help" | "--help" | "-h" => {
             println!(
@@ -73,12 +84,13 @@ fn main() -> ExitCode {
                  \x20      headroom borrow <pct>     borrow headroom non-interactively\n\
                  \x20      headroom borrow status    show the active credit\n\
                  \x20      headroom borrow clear     remove the credit\n\
+                 \x20      headroom setup            wire the statusline into settings.json\n\
                  \x20      headroom self-test        maths sanity checks"
             );
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: headroom [ui|statusline|borrow|self-test]");
+            eprintln!("usage: headroom [ui|statusline|borrow|setup|self-test]");
             ExitCode::from(64)
         }
     }

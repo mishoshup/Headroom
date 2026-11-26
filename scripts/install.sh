@@ -1,34 +1,38 @@
 #!/usr/bin/env bash
-# headroom installer: build the binary, install a stable copy under
-# ~/.claude, and point Claude Code's statusLine at it.
+# headroom installer: fetch a prebuilt release binary (or build with --build),
+# install a stable copy under ~/.claude, and wire the status line.
 #
 # Flags:
 #   --force   replace an existing statusLine that is not headroom
+#   --build   build from source instead of downloading the release
+#
+# Environment:
+#   HEADROOM_HOME      install directory (default ~/.claude/headroom)
+#   HEADROOM_REFRESH   statusline refresh seconds (default 60)
+#   HEADROOM_BINARY    use this binary instead of downloading/building
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_DIR="${HEADROOM_HOME:-$HOME/.claude/headroom}"
 DEST="$DEST_DIR/headroom"
-SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 REFRESH="${HEADROOM_REFRESH:-60}"
+REPO="mishoshup/Headroom"
 FORCE=0
+BUILD=0
 
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
+    --build) BUILD=1 ;;
     *) echo "headroom: unknown option $arg" >&2; exit 64 ;;
   esac
 done
 
-command -v jq >/dev/null 2>&1 || { echo "headroom: jq is required"; exit 1; }
-
 case "$REFRESH" in ''|*[!0-9]*) echo "headroom: HEADROOM_REFRESH must be whole seconds"; exit 1 ;; esac
 ((REFRESH >= 1)) || { echo "headroom: HEADROOM_REFRESH must be at least 1"; exit 1; }
+export HEADROOM_REFRESH="$REFRESH"
 
-mkdir -p "$DEST_DIR"
-# macOS kills new executions of a Mach-O file that was overwritten in place
-# while a process was running from it. Rename a fresh inode into position.
 install_binary() {
   local src=$1 dest=$2 tmp
   tmp="$dest.tmp.$$"
@@ -37,42 +41,95 @@ install_binary() {
   mv -f "$tmp" "$dest"
 }
 
-mkdir -p "$ROOT/bin"
-if command -v cargo >/dev/null 2>&1; then
+detect_target() {
+  case "$(uname -s):$(uname -m)" in
+    Darwin:arm64) echo "aarch64-apple-darwin" ;;
+    Darwin:x86_64) echo "x86_64-apple-darwin" ;;
+    Linux:x86_64) echo "x86_64-unknown-linux-gnu" ;;
+    Linux:aarch64|Linux:arm64) echo "aarch64-unknown-linux-gnu" ;;
+    *) echo "" ;;
+  esac
+}
+
+fetch() {
+  local url=$1 dest=$2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "$url" -O "$dest"
+  else
+    return 1
+  fi
+}
+
+download_prebuilt() {
+  local target=$1 tmp asset url
+  [ -n "$target" ] || return 1
+  command -v tar >/dev/null 2>&1 || return 1
+
+  tmp="$(mktemp -d)"
+  asset="headroom-$target.tar.gz"
+  url="https://github.com/$REPO/releases/latest/download/$asset"
+
+  if ! fetch "$url" "$tmp/$asset"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! fetch "$url.sha256" "$tmp/$asset.sha256"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$tmp" && sha256sum -c "$asset.sha256" >/dev/null) || { rm -rf "$tmp"; return 1; }
+  elif command -v shasum >/dev/null 2>&1; then
+    (cd "$tmp" && shasum -a 256 -c "$asset.sha256" >/dev/null) || { rm -rf "$tmp"; return 1; }
+  else
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  tar -xzf "$tmp/$asset" -C "$tmp" || { rm -rf "$tmp"; return 1; }
+  [ -x "$tmp/headroom" ] || { rm -rf "$tmp"; return 1; }
+  install_binary "$tmp/headroom" "$ROOT/bin/headroom"
+  rm -rf "$tmp"
+}
+
+build_from_source() {
+  command -v cargo >/dev/null 2>&1 || return 1
   cargo build --release --manifest-path "$ROOT/Cargo.toml"
   install_binary "$ROOT/target/release/headroom" "$ROOT/bin/headroom"
-elif [ -x "$ROOT/bin/headroom" ]; then
-  :
-else
-  echo "headroom: cargo is required to build, or place a prebuilt binary at bin/headroom" >&2
-  exit 1
+}
+
+target="$(detect_target)"
+mkdir -p "$ROOT/bin" "$DEST_DIR"
+
+if [ -n "${HEADROOM_BINARY:-}" ] && [ -x "$HEADROOM_BINARY" ]; then
+  install_binary "$HEADROOM_BINARY" "$ROOT/bin/headroom"
+elif ((BUILD)); then
+  build_from_source || {
+    echo "headroom: --build requires the Rust toolchain" >&2
+    exit 1
+  }
+elif ! download_prebuilt "$target"; then
+  echo "headroom: no prebuilt binary for '${target:-this platform}'; trying a source build" >&2
+  build_from_source || {
+    echo "headroom: could not download a release or build from source." >&2
+    echo "headroom: install Rust, or set HEADROOM_BINARY to a compatible binary." >&2
+    exit 1
+  }
 fi
 
-mkdir -p "$DEST_DIR"
 install_binary "$ROOT/bin/headroom" "$DEST"
 "$DEST" self-test >/dev/null
 
-[ -f "$SETTINGS" ] || printf '{}\n' > "$SETTINGS"
-existing=$(jq -r '.statusLine.command // ""' "$SETTINGS")
-
-if [ -n "$existing" ] && [[ $existing != *"$DEST"* ]] && ((FORCE == 0)); then
-  echo "headroom: a different statusLine is already configured:"
-  echo "  $existing"
-  echo "headroom: leaving it alone. Re-run with --force to replace it, or set:"
-  echo "  \"statusLine\": {\"type\": \"command\", \"command\": \"$DEST statusline\", \"refreshInterval\": $REFRESH, \"padding\": 1}"
-  exit 0
+if ((FORCE)); then
+  "$DEST" setup --force
+else
+  "$DEST" setup
 fi
 
-backup="$SETTINGS.bak.$(date +%s)"
-cp "$SETTINGS" "$backup"
-
-tmp="$SETTINGS.tmp.$$"
-jq --arg cmd "$DEST statusline" --argjson ri "$REFRESH" \
-  '.statusLine = {type: "command", command: $cmd, refreshInterval: $ri}' \
-  "$SETTINGS" > "$tmp" && mv -f "$tmp" "$SETTINGS"
-
 echo "headroom: installed $DEST"
-echo "headroom: statusline wired (refresh ${REFRESH}s); settings backup at $backup"
 echo "headroom: borrow panel:  $DEST"
 echo "headroom: borrow CLI:    $DEST borrow 20"
 echo "headroom: restart Claude Code to load the hooks and statusline"
