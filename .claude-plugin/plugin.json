@@ -3,7 +3,7 @@
   "name": "headroom",
   "displayName": "Headroom",
   "description": "Paces Claude Code's weekly subscription usage across the window, with temporary borrow credits for heavy days and a separate 5-hour ceiling. Rendered by a fast native binary with truecolor and adaptive bars.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "Mishoshup",
     "url": "https://github.com/mishoshup"

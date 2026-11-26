@@ -1,12 +1,22 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for f in \"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" \"${CLAUDE_PLUGIN_ROOT}/bin/headroom.exe\"; do [ -x \"$f\" ] && exit 0; done; echo \"headroom: binary not installed; run /headroom:setup\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" pretool",
+            "command": "for f in \"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" \"${CLAUDE_PLUGIN_ROOT}/bin/headroom.exe\"; do [ -x \"$f\" ] && exec \"$f\" pretool; done; exit 0",
             "timeout": 21600,
             "statusMessage": "headroom: checking ceilings..."
           }
@@ -18,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" prompt"
+            "command": "for f in \"${CLAUDE_PLUGIN_ROOT}/bin/headroom\" \"${CLAUDE_PLUGIN_ROOT}/bin/headroom.exe\"; do [ -x \"$f\" ] && exec \"$f\" prompt; done; exit 0"
           }
         ]
       }

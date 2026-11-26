@@ -2,6 +2,11 @@
 
 ## CHANGELOG
 
+### 1.1.2 — 2026-11-26
+
+- Hooks fail open with a setup notice when the plugin binary has not been
+  installed yet.
+
 ### 1.1.1 — 2026-11-26
 
 - Windows-specific borrow paths in hook messages.
