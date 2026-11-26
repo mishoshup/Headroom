@@ -11,4 +11,7 @@
   snapshot.
 - PreToolUse and UserPromptSubmit enforcement with a separate 5-hour ceiling.
 - Native Rust binary; no runtime dependency.
+- Prebuilt macOS and Linux release binaries with SHA-256 verification; the
+  installer downloads the matching asset. WSL is supported; native Windows is
+  deferred to a later release.
 - Runtime contract and architecture decision records.

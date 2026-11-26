@@ -93,6 +93,7 @@ download_prebuilt() {
   [ -x "$tmp/headroom" ] || { rm -rf "$tmp"; return 1; }
   install_binary "$tmp/headroom" "$ROOT/bin/headroom"
   rm -rf "$tmp"
+  echo "headroom: downloaded release asset $asset"
 }
 
 build_from_source() {

@@ -146,6 +146,9 @@ Requirements:
 - Rust 1.74 or later only when installing from source with `--build`
 - macOS, Linux, or WSL
 
+Native Windows is not packaged in 1.0.0. The binary is portable Rust, but the
+installer is POSIX and the release has no `.exe` asset yet; use WSL for now.
+
 ```bash
 claude plugin marketplace add mishoshup/Headroom
 claude plugin install headroom@mishoshup
