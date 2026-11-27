@@ -256,6 +256,15 @@ The crate forbids `unsafe` and denies `todo!`, `unimplemented!`, and `dbg!`.
 The minimum supported Rust version is 1.74. CI runs formatting, linting,
 tests, and a release build on every push.
 
+## Diagnostics
+
+```bash
+~/.claude/headroom/headroom doctor
+```
+
+Prints the binary path, snapshot path and age, available windows, active
+credit, the configured statusline command, and `HEADROOM_*` overrides.
+
 ## Uninstall
 
 ```bash

@@ -222,6 +222,89 @@ fn statusline_writes_state_and_borrow_lifts_the_ceiling() {
 }
 
 #[test]
+fn borrow_commands_are_exempt_from_the_guard() {
+    let home = home("borrow-exempt");
+    let reset = now() as i64 + 3 * 86_400 + 43_200; // day 4, over pace
+    write_state(&home, now(), None, Some((6_000, reset)));
+
+    let allowed =
+        r#"{"tool_name":"Bash","tool_input":{"command":"~/.claude/headroom/headroom borrow 20"}}"#;
+    let out = run(&home, &["pretool"], Some(allowed), &[]);
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+
+    let blocked = r#"{"tool_name":"Bash","tool_input":{"command":"ls"}}"#;
+    let out = run(&home, &["pretool"], Some(blocked), &[]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("permissionDecision"));
+
+    let injected = r#"{"tool_name":"Bash","tool_input":{"command":"~/.claude/headroom/headroom borrow 20; rm -rf /"}}"#;
+    let out = run(&home, &["pretool"], Some(injected), &[]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("permissionDecision"));
+}
+
+#[test]
+fn borrow_status_handles_a_missing_weekly_window() {
+    let home = home("borrow-status");
+    let reset = now() as i64 + 3_600;
+    write_state(&home, now(), Some((100, reset)), None);
+
+    let out = run(&home, &["borrow", "status"], None, &[]);
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("weekly window is not in the latest snapshot"));
+    assert!(text.contains("5h"));
+}
+
+#[test]
+fn statusline_keeps_a_window_omitted_by_a_payload() {
+    let home = home("merge-window");
+    let captured = now() - 5;
+    let reset = now() as i64 + 3 * 86_400;
+    write_state(&home, captured, None, Some((4_500, reset)));
+
+    let payload = serde_json::json!({
+        "model": { "display_name": "Sonnet" },
+        "rate_limits": {
+            "five_hour": {
+                "used_percentage": 10,
+                "resets_at": now() as i64 + 3_600
+            }
+        }
+    })
+    .to_string();
+    let out = run(&home, &["statusline"], Some(&payload), &[]);
+    assert!(out.status.success());
+
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(home.join("state")).unwrap()).unwrap();
+    assert_eq!(state["seven_day"]["used_bp"], 4_500);
+    assert_eq!(state["seven_day"]["resets_at"], reset);
+}
+
+#[test]
+fn doctor_reports_paths_and_snapshot() {
+    let home = home("doctor");
+    let reset = now() as i64 + 3 * 86_400;
+    write_state(&home, now(), None, Some((4_500, reset)));
+    let config = home.join("claude");
+    fs::create_dir_all(&config).unwrap();
+    fs::write(config.join("settings.json"), "{}").unwrap();
+
+    let out = run(
+        &home,
+        &["doctor"],
+        None,
+        &[("CLAUDE_CONFIG_DIR", config.to_str().unwrap())],
+    );
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("headroom "));
+    assert!(text.contains("state:"));
+    assert!(text.contains("seven_day: 45% used"));
+    assert!(text.contains("statusLine: (none)"));
+}
+
+#[test]
 fn self_test_passes() {
     let home = home("selftest");
     let out = run(&home, &["self-test"], None, &[]);

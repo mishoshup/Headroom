@@ -237,16 +237,21 @@ pub fn cli(cfg: &Config, args: &[String]) -> Result<String, String> {
 
 pub fn status_text(cfg: &Config) -> Result<String, String> {
     let now = unix_now();
-    let state = State::load(&cfg.state)
-        .ok_or("no usage snapshot yet; start Claude Code once so the statusline can capture it")?;
-    let week = state
-        .seven_day
-        .ok_or("the weekly window is not exposed for this account")?;
-    let reset = week
-        .resets_at
-        .ok_or("the snapshot has no weekly reset time")?;
-    let base = Pace::compute(cfg, week.used_bp, reset, now, 0)
-        .ok_or("the weekly window has already rolled over")?;
+    let Some(state) = State::load(&cfg.state) else {
+        return Ok(format!(
+            "headroom: no usage snapshot yet at {}. Start Claude Code once, then run headroom doctor.",
+            cfg.state.display()
+        ));
+    };
+    let Some(week) = state.seven_day else {
+        return Ok(no_weekly_message(&state, now));
+    };
+    let Some(reset) = week.resets_at else {
+        return Ok(no_weekly_message(&state, now));
+    };
+    let Some(base) = Pace::compute(cfg, week.used_bp, reset, now, 0) else {
+        return Ok(no_weekly_message(&state, now));
+    };
     let (extra, credit) = active_bp(cfg, now, reset, base.day);
 
     let Some(c) = credit else {
@@ -295,6 +300,26 @@ fn usage() -> String {
      \x20      headroom borrow status\n\
      \x20      headroom borrow clear"
         .into()
+}
+
+fn no_weekly_message(state: &State, now: u64) -> String {
+    let age = now.saturating_sub(state.captured_at);
+    let five = state
+        .five_hour
+        .map(|window| {
+            format!(
+                "5h {}%{}",
+                format_pct(window.used_bp),
+                window
+                    .resets_at
+                    .map(|reset| format!(", resets in {}", duration(reset - now as i64)))
+                    .unwrap_or_default()
+            )
+        })
+        .unwrap_or_else(|| "no windows".into());
+    format!(
+        "headroom: the weekly window is not in the latest snapshot (captured {age}s ago; {five}). Wait for the next statusline tick or run headroom doctor."
+    )
 }
 
 #[cfg(test)]

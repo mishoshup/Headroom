@@ -30,7 +30,80 @@ struct PromptInput {
     prompt: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ToolEnvelope {
+    #[serde(default)]
+    tool_name: Option<String>,
+    #[serde(default)]
+    tool_input: Option<ToolPayload>,
+}
+
+#[derive(Deserialize)]
+struct ToolPayload {
+    #[serde(default)]
+    command: Option<String>,
+}
+
+fn stdin_string() -> String {
+    let mut raw = String::new();
+    let _ = std::io::stdin().read_to_string(&mut raw);
+    raw
+}
+
+/// Only the binary's own maintenance commands are exempt from the guard.
+/// Reject shell metacharacters and require the first token to be the headroom
+/// binary, so this cannot be used to smuggle another command.
+fn is_headroom_command(command: &str) -> bool {
+    let command = command.trim();
+    if command.is_empty()
+        || command.chars().any(|c| {
+            matches!(
+                c,
+                '\n' | '\r' | ';' | '&' | '|' | '<' | '>' | '`' | '$' | '(' | ')'
+            )
+        })
+    {
+        return false;
+    }
+
+    let mut parts = command.split_whitespace();
+    let Some(exe) = parts.next() else {
+        return false;
+    };
+    let Some(subcommand) = parts.next() else {
+        return false;
+    };
+    let exe = exe.trim_matches(|c| c == '"' || c == '\'');
+    let exe = exe.to_ascii_lowercase();
+
+    (exe.ends_with("headroom") || exe.ends_with("headroom.exe"))
+        && matches!(subcommand, "borrow" | "setup" | "doctor")
+}
+
+fn is_exempt_tool_call(raw: &str) -> bool {
+    if !raw.contains("headroom") {
+        return false;
+    }
+    let Ok(envelope) = serde_json::from_str::<ToolEnvelope>(raw) else {
+        return false;
+    };
+    if envelope.tool_name.as_deref() != Some("Bash") {
+        return false;
+    }
+    envelope
+        .tool_input
+        .and_then(|payload| payload.command)
+        .as_deref()
+        .map(is_headroom_command)
+        .unwrap_or(false)
+}
+
 pub fn pretool(cfg: &Config) -> Decision {
+    let raw = stdin_string();
+    if is_exempt_tool_call(&raw) {
+        return Decision::Allow;
+    }
+
     let now = unix_now();
     let Some(state) = State::load(&cfg.state) else {
         return Decision::Allow;
@@ -95,10 +168,9 @@ pub fn pretool(cfg: &Config) -> Decision {
 }
 
 pub fn prompt(cfg: &Config) -> PromptDecision {
-    let mut raw = String::new();
-    let parsed = std::io::stdin().read_to_string(&mut raw).ok();
-    let prompt = parsed
-        .and_then(|_| serde_json::from_str::<PromptInput>(&raw).ok())
+    let raw = stdin_string();
+    let prompt = serde_json::from_str::<PromptInput>(&raw)
+        .ok()
         .and_then(|p| p.prompt);
 
     let now = unix_now();
@@ -250,5 +322,28 @@ mod tests {
         assert!(!is_human(Some("/usage")));
         assert!(!is_human(Some("!ls")));
         assert!(!is_human(None));
+    }
+
+    #[test]
+    fn headroom_commands_are_exempt() {
+        assert!(is_headroom_command("~/.claude/headroom/headroom borrow 20"));
+        assert!(is_headroom_command(
+            r#""C:\Users\me\.claude\headroom\headroom.exe" borrow clear"#
+        ));
+        assert!(is_headroom_command(
+            "/Users/me/.claude/plugins/cache/mishoshup/headroom/1.1.2/bin/headroom setup --force"
+        ));
+        assert!(is_headroom_command("headroom doctor"));
+    }
+
+    #[test]
+    fn other_commands_are_not_exempt() {
+        assert!(!is_headroom_command("ls"));
+        assert!(!is_headroom_command("echo headroom borrow 20"));
+        assert!(!is_headroom_command("headroom borrow 20; rm -rf /"));
+        assert!(!is_headroom_command("headroom borrow 20 && rm -rf /"));
+        assert!(!is_headroom_command("headroom borrow 20 | cat"));
+        assert!(!is_headroom_command("$(headroom borrow 20)"));
+        assert!(!is_headroom_command("headroom statusline"));
     }
 }
