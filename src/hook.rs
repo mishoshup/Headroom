@@ -150,16 +150,11 @@ pub fn pretool(cfg: &Config) -> Decision {
     }
 
     if cfg.pacing {
-        if let Some(week) = state.seven_day {
-            if let Some(reset) = week.resets_at {
-                if let Some(base) = Pace::compute(cfg, week.used_bp, reset, now, 0) {
-                    let (extra, _) = credit::active_bp(cfg, now, reset, base.day);
-                    if let Some(pace) = Pace::compute(cfg, week.used_bp, reset, now, extra) {
-                        if pace.over {
-                            return Decision::Deny(weekly_reason(&pace, now));
-                        }
-                    }
-                }
+        if let Some(base) = Pace::compute(cfg, &state, now, 0) {
+            let (extra, _) = credit::active_bp(cfg, now, base.window_end, base.day);
+            let pace = Pace::compute(cfg, &state, now, extra).unwrap_or(base);
+            if pace.exhausted {
+                return Decision::Deny(exhausted_reason(&pace, now));
             }
         }
     }
@@ -207,39 +202,39 @@ pub fn prompt(cfg: &Config) -> PromptDecision {
         parts.push(seg);
 
         if cfg.pacing {
-            if let Some(reset) = week.resets_at {
-                if let Some(base) = Pace::compute(cfg, week.used_bp, reset, now, 0) {
-                    let (extra, _) = credit::active_bp(cfg, now, reset, base.day);
-                    if let Some(pace) = Pace::compute(cfg, week.used_bp, reset, now, extra) {
-                        let credit_note = if pace.credit_bp > 0 {
-                            format!(", +{}% borrowed", format_pct(pace.credit_bp))
-                        } else {
-                            String::new()
-                        };
-                        if pace.over {
-                            parts.push(format!(
-                                "pace day {}/{}: {}% used vs {}% ceiling{} (OVER by {} pts); unblock with `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}`",
-                                pace.day,
-                                pace.week_days,
-                                format_pct(pace.used_bp),
-                                format_pct(pace.ceiling_bp),
-                                credit_note,
-                                format_pct(pace.used_bp - pace.ceiling_bp)
-                            ));
-                            if cfg.block_prompts && is_human(prompt.as_deref()) {
-                                return PromptDecision::Block(block_reason(&pace, now));
-                            }
-                        } else {
-                            parts.push(format!(
-                                "pace day {}/{}: ceiling {}%{}, {} pts left",
-                                pace.day,
-                                pace.week_days,
-                                format_pct(pace.ceiling_bp),
-                                credit_note,
-                                format_pct(pace.ceiling_bp - pace.used_bp)
-                            ));
-                        }
+            if let Some(base) = Pace::compute(cfg, &state, now, 0) {
+                let (extra, _) = credit::active_bp(cfg, now, base.window_end, base.day);
+                let pace = Pace::compute(cfg, &state, now, extra).unwrap_or(base);
+                let credit_note = if pace.credit_bp > 0 {
+                    format!(", +{}% borrowed", format_pct(pace.credit_bp))
+                } else {
+                    String::new()
+                };
+                if pace.exhausted {
+                    parts.push(format!(
+                        "today: 0% left{}; next allowance {}",
+                        credit_note,
+                        next_event(&pace, now)
+                    ));
+                    if cfg.block_prompts && is_human(prompt.as_deref()) {
+                        return PromptDecision::Block(block_reason(&pace, now));
                     }
+                } else {
+                    let next = if pace.days_after > 0 {
+                        format!(
+                            "next {} days {}%/day",
+                            pace.days_after,
+                            format_pct(pace.future_per_day_bp)
+                        )
+                    } else {
+                        "last day of the week".into()
+                    };
+                    parts.push(format!(
+                        "today: {}% left{}; {}",
+                        format_pct(pace.left_bp),
+                        credit_note,
+                        next
+                    ));
                 }
             }
         }
@@ -273,19 +268,26 @@ fn five_reason(cfg: &Config, five: &Window, now: u64) -> String {
     )
 }
 
-fn weekly_reason(pace: &Pace, now: u64) -> String {
+fn exhausted_reason(pace: &Pace, now: u64) -> String {
     let credit_note = if pace.credit_bp > 0 {
         format!(" (+{}% borrowed)", format_pct(pace.credit_bp))
     } else {
         String::new()
     };
-    format!(
-        "headroom: weekly usage is {}%, over the day-{} ceiling of {}%{credit_note}. Pause until {}. Do not retry tools; summarise progress and tell the user when work can resume. The user can borrow headroom with `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}` in a terminal.",
-        format_pct(pace.used_bp),
-        pace.day,
-        format_pct(pace.ceiling_bp),
-        next_event(pace, now)
-    )
+    if pace.used_bp >= crate::pace::BP_MAX {
+        format!(
+            "headroom: the weekly budget is exhausted at {}%. It resets in {}. Do not retry tools; summarise progress and tell the user when work can resume.",
+            format_pct(pace.used_bp),
+            duration(pace.window_end - now as i64)
+        )
+    } else {
+        format!(
+            "headroom: today's allowance is used ({}% cap{credit_note}, {}% weekly used). Next allowance unlocks in {}. Do not retry tools; summarise progress and tell the user when work can resume. Borrow with `{BORROW_BIN} borrow <pct>`.",
+            format_pct(pace.ceiling_bp),
+            format_pct(pace.used_bp),
+            duration(pace.next_epoch - now as i64)
+        )
+    }
 }
 
 fn block_reason(pace: &Pace, now: u64) -> String {
@@ -294,13 +296,19 @@ fn block_reason(pace: &Pace, now: u64) -> String {
     } else {
         String::new()
     };
-    format!(
-        "headroom: weekly usage {}% is over the day-{} ceiling of {}%{credit_note}. Work resumes when {}. To unblock now, run `{BORROW_BIN} borrow <pct>` or open `{BORROW_BIN}` in a terminal. Raise HEADROOM_DAILY_PERCENT or set HEADROOM_PACING=off only if the guard itself must be disabled (restart Claude Code after changing the environment).",
-        format_pct(pace.used_bp),
-        pace.day,
-        format_pct(pace.ceiling_bp),
-        next_event(pace, now)
-    )
+    if pace.used_bp >= crate::pace::BP_MAX {
+        format!(
+            "headroom: the weekly budget is exhausted at 100%. It resets in {}. Nothing can be borrowed; work resumes after the reset.",
+            duration(pace.window_end - now as i64)
+        )
+    } else {
+        format!(
+            "headroom: today's allowance is used ({}% cap{credit_note}, {}% weekly used). Work resumes when {}. To unblock now, run `{BORROW_BIN} borrow <pct>`.",
+            format_pct(pace.ceiling_bp),
+            format_pct(pace.used_bp),
+            next_event(pace, now)
+        )
+    }
 }
 
 fn next_event(pace: &Pace, now: u64) -> String {

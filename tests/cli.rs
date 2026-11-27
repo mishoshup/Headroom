@@ -24,7 +24,27 @@ fn home(name: &str) -> PathBuf {
 }
 
 fn write_state(home: &Path, captured: u64, five: Option<(i64, i64)>, week: Option<(i64, i64)>) {
-    let mut value = json!({ "captured_at": captured });
+    write_state_full(home, captured, five, week, 0, 0, 0, 0);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_state_full(
+    home: &Path,
+    captured: u64,
+    five: Option<(i64, i64)>,
+    week: Option<(i64, i64)>,
+    day: u32,
+    day_cap_bp: i64,
+    day_reset: i64,
+    week_days: u32,
+) {
+    let mut value = json!({
+        "captured_at": captured,
+        "day": day,
+        "day_cap_bp": day_cap_bp,
+        "day_reset": day_reset,
+        "week_days": week_days
+    });
     if let Some((used, reset)) = five {
         value["five_hour"] = json!({ "used_bp": used, "resets_at": reset });
     }
@@ -78,12 +98,12 @@ fn weekly_pace_allows_and_denies() {
     assert!(out.status.success());
     assert!(out.stdout.is_empty());
 
-    write_state(&home, now(), None, Some((6_000, reset)));
+    write_state_full(&home, now(), None, Some((7_000, reset)), 4, 7_000, reset, 7);
     let out = run(&home, &["pretool"], None, &[]);
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains(r#""permissionDecision":"deny""#));
-    assert!(text.contains("day-4 ceiling"));
+    assert!(text.contains("today's allowance is used"));
 
     let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
@@ -94,28 +114,27 @@ fn weekly_pace_allows_and_denies() {
         parsed["hookSpecificOutput"]["permissionDecision"],
         serde_json::json!("deny")
     );
-    assert!(parsed["hookSpecificOutput"]["permissionDecisionReason"]
-        .as_str()
-        .unwrap()
-        .contains("weekly usage"));
 }
 
 #[test]
-fn custom_daily_percent_and_grace_apply() {
-    let home = home("custom");
-    let reset = now() as i64 + 3 * 86_400 + 43_200;
+fn additive_borrow_raises_todays_allowance() {
+    let home = home("borrow-add");
+    let reset = now() as i64 + 5 * 86_400;
+    write_state_full(&home, now(), None, Some((6_000, reset)), 3, 6_800, reset, 7);
 
-    write_state(&home, now(), None, Some((4_500, reset)));
-    let out = run(
-        &home,
-        &["pretool"],
-        None,
-        &[("HEADROOM_DAILY_PERCENT", "10")],
-    );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("deny"));
+    let out = run(&home, &["borrow", "20"], None, &[]);
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("added +20%"));
+    assert!(text.contains("today's allowance: 68% -> 88%"));
+    assert!(text.contains("28% left today"));
 
-    let out = run(&home, &["pretool"], None, &[("HEADROOM_PACING_GRACE", "6")]);
-    assert!(out.stdout.is_empty());
+    let out = run(&home, &["borrow", "33"], None, &[]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot borrow"));
+
+    let out = run(&home, &["borrow", "clear"], None, &[]);
+    assert!(out.status.success());
 }
 
 #[test]
@@ -164,7 +183,7 @@ fn wait_mode_denies_when_reset_exceeds_max_wait() {
 fn prompt_blocks_and_slash_commands_pass() {
     let home = home("prompt");
     let reset = now() as i64 + 3 * 86_400 + 43_200;
-    write_state(&home, now(), None, Some((6_000, reset)));
+    write_state_full(&home, now(), None, Some((6_800, reset)), 4, 6_800, reset, 7);
 
     let out = run(&home, &["prompt"], Some(r#"{"prompt":"do work"}"#), &[]);
     assert_eq!(out.status.code(), Some(2));
@@ -180,7 +199,7 @@ fn prompt_blocks_and_slash_commands_pass() {
         &[("HEADROOM_BLOCK_PROMPTS", "0")],
     );
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("OVER"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("today: 0% left"));
 }
 
 #[test]
@@ -198,7 +217,7 @@ fn statusline_writes_state_and_borrow_lifts_the_ceiling() {
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("total +25%"));
-    assert!(text.contains("82.16%"));
+    assert!(text.contains("38.75% left"));
 
     let payload = statusline_payload(five_reset, week_reset);
     let out = run(&home, &["statusline"], Some(&payload), &[]);
@@ -206,8 +225,8 @@ fn statusline_writes_state_and_borrow_lifts_the_ceiling() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("Sonnet"));
     assert!(text.contains("today"));
-    assert!(text.contains("54.77%"));
-    assert!(text.contains("37.16% left of weekly"));
+    assert!(text.contains("38.75% left"));
+    assert!(text.contains("next 3 days"));
     assert!(text.contains("+25% borrowed"));
 
     let state: serde_json::Value =
@@ -224,8 +243,8 @@ fn statusline_writes_state_and_borrow_lifts_the_ceiling() {
 #[test]
 fn borrow_commands_are_exempt_from_the_guard() {
     let home = home("borrow-exempt");
-    let reset = now() as i64 + 3 * 86_400 + 43_200; // day 4, over pace
-    write_state(&home, now(), None, Some((6_000, reset)));
+    let reset = now() as i64 + 3 * 86_400 + 43_200; // day 4, allowance used
+    write_state_full(&home, now(), None, Some((6_800, reset)), 4, 6_800, reset, 7);
 
     let allowed =
         r#"{"tool_name":"Bash","tool_input":{"command":"~/.claude/headroom/headroom borrow 20"}}"#;
@@ -402,9 +421,9 @@ fn ui_falls_back_to_status_without_a_tty() {
 
     let out = run(&home, &[], None, &[]);
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("no active override"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("no active borrow"));
 
     let out = run(&home, &["borrow"], None, &[]);
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("no active override"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("no active borrow"));
 }
