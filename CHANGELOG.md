@@ -2,6 +2,14 @@
 
 ## CHANGELOG
 
+### 1.1.3 — 2026-11-27
+
+- Borrow, setup and doctor commands are exempt from the weekly guard through a
+  strict command allowlist.
+- Statusline snapshots preserve a window omitted by a transient payload.
+- `borrow status` reports missing windows without failing.
+- Added `headroom doctor` for paths, snapshot, credit and settings.
+
 ### 1.1.2 — 2026-11-26
 
 - Hooks fail open with a setup notice when the plugin binary has not been

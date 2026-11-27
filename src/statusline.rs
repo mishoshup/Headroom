@@ -80,6 +80,23 @@ pub fn run(cfg: &Config) -> String {
         .and_then(|r| r.seven_day.as_ref())
         .and_then(to_window);
 
+    let previous = State::load(&cfg.state);
+    let previous_captured = previous.as_ref().map(|s| s.captured_at);
+    let five = merge_window(
+        five,
+        previous.as_ref().and_then(|s| s.five_hour),
+        now,
+        previous_captured,
+        cfg.stale_after,
+    );
+    let week = merge_window(
+        week,
+        previous.as_ref().and_then(|s| s.seven_day),
+        now,
+        previous_captured,
+        cfg.stale_after,
+    );
+
     let state = State {
         captured_at: now,
         five_hour: five,
@@ -130,6 +147,28 @@ fn to_window(window: &RateWindow) -> Option<Window> {
         .filter(|v| v.is_finite() && *v > 0.0)
         .map(|v| v as i64);
     Some(Window { used_bp, resets_at })
+}
+
+/// A statusline payload may briefly omit a window. Keep the previous value if
+/// it is still fresh and its reset is still in the future.
+fn merge_window(
+    new: Option<Window>,
+    old: Option<Window>,
+    now: u64,
+    previous_captured: Option<u64>,
+    stale_after: u64,
+) -> Option<Window> {
+    if let Some(window) = new {
+        return Some(window);
+    }
+    let window = old?;
+    let reset = window.resets_at?;
+    let captured = previous_captured?;
+    if reset > now as i64 && now.saturating_sub(captured) <= stale_after {
+        Some(window)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

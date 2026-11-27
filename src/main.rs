@@ -1,5 +1,6 @@
 mod config;
 mod credit;
+mod doctor;
 mod hook;
 mod pace;
 mod render;
@@ -76,6 +77,13 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "doctor" => match doctor::run(&Config::for_hooks()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("headroom: {message}");
+                ExitCode::FAILURE
+            }
+        },
         "self-test" => self_test(),
         "help" | "--help" | "-h" => {
             println!(
@@ -85,12 +93,13 @@ fn main() -> ExitCode {
                  \x20      headroom borrow status    show the active credit\n\
                  \x20      headroom borrow clear     remove the credit\n\
                  \x20      headroom setup            wire the statusline into settings.json\n\
+                 \x20      headroom doctor           show paths, snapshot and configuration\n\
                  \x20      headroom self-test        maths sanity checks"
             );
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: headroom [ui|statusline|borrow|setup|self-test]");
+            eprintln!("usage: headroom [ui|statusline|borrow|setup|doctor|self-test]");
             ExitCode::from(64)
         }
     }
