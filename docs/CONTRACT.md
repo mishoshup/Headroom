@@ -12,16 +12,17 @@ matching update here.
 | `headroom statusline` | Status-line text on stdout | 0 |
 | `headroom pretool` | Nothing, or a PreToolUse deny object on stdout | 0 |
 | `headroom prompt` | Context on stdout, or a block message on stderr | 0, 2 when blocked |
-| `headroom borrow <pct> [--week] [--note text]` | Confirmation text | 0, 1 on failure |
+| `headroom borrow <pct> [--note text]` | Confirmation text | 0, 1 on failure |
 | `headroom borrow status` | Active credit text | 0, 1 on failure |
 | `headroom borrow clear` | Confirmation text | 0, 1 on failure |
 | `headroom setup [--force]` | Status-line configuration message | 0, 1 on failure |
+| `headroom doctor` | Paths, snapshot, credit and settings report | 0 |
 | `headroom self-test` | `self-test passed` | 0, 1 on failure |
 | `headroom help` | Usage text | 0 |
 
-`borrow` is additive. The resulting credit is clamped to 100% of the weekly
-limit. A day-scoped credit expires at the next allowance boundary; a
-week-scoped credit expires at the weekly reset.
+`borrow` is additive. The credit raises today's fixed allowance and is capped
+by the amount left for the days after today. It expires at the next allowance
+boundary (or the weekly reset on the last day).
 
 ## 2. Status-line input
 
@@ -64,13 +65,20 @@ Atomic JSON, written by `statusline` and read by the hooks.
 {
   "captured_at": 1795678885,
   "five_hour": { "used_bp": 1200, "resets_at": 1795682485 },
-  "seven_day": { "used_bp": 4600, "resets_at": 1796023200 }
+  "seven_day": { "used_bp": 4600, "resets_at": 1796023200 },
+  "day": 3,
+  "day_cap_bp": 5680,
+  "day_reset": 1796023200,
+  "week_days": 7
 }
 ```
 
 - `used_bp` is the percentage in basis points (`4600` = 46.00%).
 - `resets_at` is Unix epoch seconds.
-- Either window may be absent.
+- `day`, `day_cap_bp`, `day_reset`, and `week_days` pin today's fixed
+  allowance to its weekly window.
+- Either window may be absent; a transient omission keeps the previous window
+  when its reset is still in the future and the snapshot is fresh.
 - A snapshot older than `HEADROOM_STALE_AFTER` is ignored, which fails open.
 
 ## 5. Borrow credit (`credit.json`)
@@ -87,9 +95,10 @@ Atomic JSON, written by `statusline` and read by the hooks.
 }
 ```
 
-- `scope` is `day` or `week`.
+- `scope` is `day`. The field remains for compatibility; older `week` credits
+  are only honoured on their creation day.
 - `window_reset` binds the credit to one weekly window.
-- `day` binds a day-scoped credit to one allowance day.
+- `day` binds the credit to one allowance day.
 - `expires_at` is authoritative; an expired credit is ignored.
 - The file is separate from the snapshot so status-line refreshes cannot
   erase it.
@@ -98,15 +107,24 @@ Atomic JSON, written by `statusline` and read by the hooks.
 
 ```
 week_seconds = HEADROOM_WEEK_DAYS * 86400
-elapsed      = clamp(now - (resets_at - week_seconds), 0, week_seconds - 1)
-day          = elapsed / 86400 + 1
-daily_bp     = HEADROOM_DAILY_PERCENT or round(HEADROOM_WEEKLY_TARGET / week_days)
-allowance_bp = min(10000, daily_bp * day)
-ceiling_bp   = min(10000, allowance_bp + grace_bp + credit_bp)
-over         = used_bp > ceiling_bp
+window_start = resets_at - week_seconds
+day          = floor((now - window_start) / 86400) + 1
+days_left    = week_days - day + 1
+remaining    = 10000 - used_bp
+base_cap     = used_bp + remaining / days_left
+ceiling      = min(10000, base_cap + credit_bp)
+left         = max(0, ceiling - used_bp)
+future/day   = (10000 - used_bp) / max(1, week_days - day)
 ```
 
-A day-scoped credit expires at `min(resets_at, window_start + day * 86400)`.
+`base_cap` is fixed for the day and stored in the snapshot (`day_cap_bp`). It is
+recomputed only when the day, weekly window or `week_days` changes. The
+statusline refreshes it; hooks fall back to the formula if the stored value is
+missing or stale.
+
+A borrow raises `ceiling` and is capped at `10000 - base_cap`. It does not
+change the total weekly budget; tomorrow divides whatever is actually left over
+the remaining days.
 
 ## 7. Failure behaviour
 

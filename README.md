@@ -14,47 +14,50 @@ binary with no runtime dependencies.
 ## Overview
 
 Claude Code exposes the weekly rate-limit percentage and its reset time to the
-status-line command. `headroom` divides the seven-day window into daily
-allowances:
+status-line command. Headroom divides what is left of the week across the days
+that remain:
 
 ```
-window_start = resets_at - 7 days
-day          = floor((now - window_start) / 1 day) + 1
-allowance    = daily_percent × day
+remaining = 100 - used
+days_left = days left including today
+today's allowance = remaining / days_left
 ```
 
-Day N receives N daily shares, so unused allowance carries forward. The
-default daily share is one seventh of the weekly allowance.
+The allowance is fixed for the day. At the next day it is recomputed from
+actual usage, so an unused share carries into the remaining days.
+
+Example: a new week, use 2% on day 1.
+
+```
+day 1: 100 / 7 = 14.29%
+day 2: 98 / 6 = 16.33%
+```
 
 The plugin provides two surfaces:
 
-1. A concise status line reporting weekly usage and today's position against
-   its allowance.
-2. An interactive panel for the detailed view and for borrowing additional
-   headroom.
+1. A concise status line reporting weekly usage, today's remaining allowance,
+   and the per-day allowance for the rest of the week.
+2. An interactive panel for borrowing part of the rest of the week into today.
 
 ## Status line
 
 ```
 Usage · Sonnet · context ◔ 12%
-weekly  ▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱     46%  resets in 4d 12h
-today   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  107.3%  3.13% extra of weekly
+weekly  ▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  46%  resets in 4d 12h
+today   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱  10.8% left
+        next 4 days 13.5%/day
 ```
 
-The header and the bar rows share an eight-column label gutter, so `Sonnet`
-and every bar begin on the same column.
-
-The `today` row uses a 100% scale for today's allowance:
-
-- `100%` means the allowance is exactly consumed.
-- Values above `100%` indicate overspend, for example `120%`.
-- The trailing figure expresses the same position in weekly percentage
-  points: `3.13% extra of weekly`, or `12.16% left of weekly`.
-
-When a borrow is active, one subordinate row reports it:
+- The header and bar rows share an eight-column label gutter.
+- `today` reports only how much is left today; there is no “extra of weekly”
+  suffix.
+- The line below reports `(100 - used) / days after today`, updated live. As
+  usage grows today, the future per-day figure falls.
+- With a borrow:
 
 ```
-          +20% borrowed · allowance 62.87% of weekly
+today   ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱  30.8% left
+        next 4 days 13.5%/day · +20% borrowed
 ```
 
 ## Interactive panel
@@ -63,42 +66,40 @@ Run `~/.claude/headroom/headroom` without arguments, or
 `~/.claude/headroom/headroom borrow`, in a terminal.
 
 ```
-Headroom  borrow extra headroom
-You are 3.13% over today's limit.  Weekly usage is 46%.
+Headroom  borrow from the rest of the week
+You have 10.8% left today.  Weekly usage is 46%.
 ────────────────────────────────────────────────
-weekly used ▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱    46%  resets in 4d 12h
-today limit ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  42.87%  3.13% over
+weekly used ▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱    46%  resets in 4d 12h
+today       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  10.8%  left
+next days    4 days · 13.5%/day
 
-Borrow to get back under today's limit
-▸ +5%      gets you under   → limit 47.87% · 1.87% left
-  +10%    → limit 52.87% · 6.87% left
-  +15%    → limit 57.87% · 11.87% left
-  +20%    → limit 62.87% · 16.87% left
-  +25%    → limit 67.87% · 21.87% left
-  +30%                      → limit 72.87% · 26.87% left
+Borrow from the rest of the week
+▸ +5%     today 15.8% left
+  +10%    today 20.8% left
+  +15%    today 25.8% left
+  +20%    today 30.8% left
+  +25%    today 35.8% left
+  +30%    today 40.8% left
   custom amount…
   clear current borrow
   quit
 
-Selected: add +5%  →  limit 47.87%  ·  1.87% left  ·  expires in 12h 0m
+add +5%  →  15.8% left today  ·  4 days · 13.5%/day  ·  expires in 12h 0m
 
-↑/↓ choose · enter confirm · w scope · c clear · q quit
+↑/↓ choose · enter confirm · c clear · q quit
 ```
 
 Behaviour:
 
-- When usage is above the allowance, the first item is the smallest borrow
-  that returns the account below the limit.
-- Every option previews the resulting limit and the remaining or excess
-  amount.
-- `w` toggles the borrow scope between today and the remainder of the week.
-- `enter` applies the selected option; `c` clears the current borrow; `q`
-  exits.
+- `enter` applies the selected borrow; `c` clears it; `q` exits.
+- Every option previews the resulting left-today amount.
+- Borrow is for today. There is no week-scope toggle.
+- If the weekly budget is exhausted, nothing can be borrowed.
 
-## Borrowing headroom
+## Borrowing
 
-A borrow adds percentage points of the weekly limit to the current allowance.
-Borrows are additive and expire automatically.
+A borrow adds percentage points of the weekly limit to today's allowance. It
+does not create quota: it moves part of the rest of the week into today.
 
 ```bash
 ~/.claude/headroom/headroom borrow 20
@@ -106,36 +107,35 @@ Borrows are additive and expire automatically.
 
 ```
 headroom: added +20% for today.
-today's limit: 42.87% -> 62.87%.
-You now have 16.87% left today.
-Expires in 11h 59m. Future days keep their normal limits, so unused
-allowance repays the borrow.
+today's allowance: 56.8% -> 76.8%.
+30.8% left today.
+next 4 days 13.5%/day.
+expires in 12h 0m.
 ```
 
-Options:
-
-- `borrow 20` — add 20 points until the next day boundary.
-- `borrow 15 --week` — add 15 points until the weekly reset.
+- `borrow 20` — add 20% to today's allowance, capped by the amount left for
+  the rest of the week.
 - `borrow 10 --note "off Friday and Saturday"` — attach a note.
-- `borrow status` — display the active borrow.
+- `borrow status` — display the active borrow and today’s position.
 - `borrow clear` — remove it.
 
-The credit is stored in `~/.claude/headroom/credit.json`, keyed to the
-weekly reset and day. Inside Claude Code, `/headroom:borrow 20` and
-`!~/.claude/headroom/headroom borrow 20` provide the same command. On Windows, use `%USERPROFILE%\.claude\headroom\headroom.exe borrow 20`.
+The credit is stored in `~/.claude/headroom/credit.json`, keyed to the weekly
+reset and day. The borrow adds to the fixed day cap; tomorrow recomputes from
+actual usage, so anything not used today returns to the rest of the week.
+Inside Claude Code, `/headroom:borrow 20` works even when today's allowance is
+used: the hook exempts the `headroom borrow` command from the guard. On Windows,
+use `%USERPROFILE%\.claude\headroom\headroom.exe borrow 20`.
 
 ## Enforcement
 
-When weekly usage is above the current allowance:
-
-- `PreToolUse` denies tool calls and reports today's limit and the next
-  allowance time.
-- `UserPromptSubmit` blocks new prompts. Slash commands and `!` shell commands
-  remain available so that usage can be inspected and the allowance can be
-  adjusted.
-- The status line marks the `today` row in red and states the excess.
-
-A separate 5-hour ceiling is enforced at 98% by default.
+- When today's allowance is used, `PreToolUse` denies tools and
+  `UserPromptSubmit` blocks prompts until the next day.
+- When the weekly budget is exhausted, both stay blocked until the weekly
+  reset.
+- `headroom borrow`, `borrow clear`, `setup`, and `doctor` are exempt from the
+  guard through a strict command allowlist.
+- The status line shows `0% left` in red.
+- A separate 5-hour ceiling is enforced at 98% by default.
 
 ## Installation
 
@@ -196,10 +196,7 @@ in the environment that launches Claude Code.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HEADROOM_DAILY_PERCENT` | `100 / 7` (14.29) | Percentage points of the weekly limit granted per day. |
-| `HEADROOM_WEEKLY_TARGET` | `100` | Weekly percentage to distribute when `HEADROOM_DAILY_PERCENT` is unset. |
 | `HEADROOM_PACING` | `on` | Set to `off` to disable the weekly pace guard. |
-| `HEADROOM_PACING_GRACE` | `0` | Additional points of tolerance before blocking. |
 | `HEADROOM_BLOCK_PROMPTS` | `1` | Set to `0` to block tools only. |
 | `HEADROOM_FIVE_HOUR_LIMIT` | `98` | Five-hour ceiling, in percent. |
 | `HEADROOM_FIVE_HOUR_MODE` | `block` | `wait` sleeps until the five-hour reset instead of denying. |

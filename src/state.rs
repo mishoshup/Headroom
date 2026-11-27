@@ -16,6 +16,14 @@ pub struct State {
     pub five_hour: Option<Window>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seven_day: Option<Window>,
+    #[serde(default)]
+    pub day: u32,
+    #[serde(default)]
+    pub day_cap_bp: i64,
+    #[serde(default)]
+    pub day_reset: i64,
+    #[serde(default)]
+    pub week_days: u32,
 }
 
 impl State {
@@ -54,6 +62,7 @@ mod tests {
                 used_bp: 4_500,
                 resets_at: Some(1_796_000_000),
             }),
+            ..State::default()
         };
         let raw = serde_json::to_string(&state).unwrap();
         let back: State = serde_json::from_str(&raw).unwrap();

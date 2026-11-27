@@ -29,15 +29,6 @@ impl fmt::Display for Pct {
     }
 }
 
-/// Percentage ratio that may exceed 100 (for "120% of today's allowance").
-pub struct Ratio(pub i64);
-
-impl fmt::Display for Ratio {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_bp(f, self.0.max(0))
-    }
-}
-
 /// Seconds -> "1d 5h", "3h 12m", "59m", formatted without an allocation.
 pub struct Duration(pub i64);
 
@@ -55,12 +46,6 @@ impl fmt::Display for Duration {
             write!(f, "{m}m")
         }
     }
-}
-
-/// Basis points -> compact percent text without a 100% clamp.
-#[cfg(test)]
-pub fn format_ratio(bp: i64) -> String {
-    format!("{}", Ratio(bp))
 }
 
 /// Basis points -> compact percent text. 4286 -> "42.86", 4500 -> "45".
@@ -85,13 +70,6 @@ pub fn f64_to_bp(v: f64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ratios_can_exceed_one_hundred() {
-        assert_eq!(format_ratio(10_730), "107.3");
-        assert_eq!(format_ratio(12_000), "120");
-        assert_eq!(format_pct(10_730), "100");
-    }
 
     #[test]
     fn durations_are_compact() {

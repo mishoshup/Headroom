@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use crate::pace::Pace;
 use crate::style::{Accent, Theme};
-use crate::util::{Duration, Pct, Ratio};
+use crate::util::{Duration, Pct};
 
 const LABEL_WIDTH: usize = 8;
 
@@ -62,10 +62,8 @@ pub fn dashboard(
     if let Some(p) = pace {
         write_today_row(&mut out, p, cells, theme);
         out.push('\n');
-        if p.credit_bp > 0 {
-            write_borrow_row(&mut out, p, theme);
-            out.push('\n');
-        }
+        write_next_days_row(&mut out, p, theme);
+        out.push('\n');
     }
     if out.ends_with('\n') {
         out.pop();
@@ -106,52 +104,50 @@ fn write_window_row(
 }
 
 fn write_today_row(out: &mut String, pace: &Pace, cells: usize, theme: &Theme) {
-    // 100% = today's allowance exactly used; 120% = overspent by 20% of it.
-    let used_of_allowance = if pace.ceiling_bp > 0 {
+    let ratio = if pace.ceiling_bp > 0 {
         pace.used_bp.saturating_mul(10_000) / pace.ceiling_bp
     } else {
         0
     };
-    let accent = if used_of_allowance >= 10_000 {
+    let accent = if pace.left_bp == 0 {
         Accent::Red
-    } else if used_of_allowance >= 9_000 {
+    } else if pace.left_bp <= 500 {
         Accent::Yellow
     } else {
         Accent::Green
     };
-    let delta = pace.used_bp - pace.ceiling_bp;
 
     write_label(out, theme, "today");
-    write_bar(out, used_of_allowance, cells, theme, accent);
+    write_bar(out, ratio, cells, theme, accent);
     out.push_str("  ");
     theme.start_color(out, accent);
-    let _ = write!(out, "{:>6}%", Ratio(used_of_allowance));
+    let _ = write!(out, "{:>6}% left", Pct(pace.left_bp));
     theme.reset(out);
-    out.push_str("  ");
-
-    if delta > 0 {
-        theme.start_color(out, Accent::Red);
-        let _ = write!(out, "{}% extra of weekly", Pct(delta));
-        theme.reset(out);
-    } else {
-        theme.start_color(out, Accent::Green);
-        let _ = write!(out, "{}% left of weekly", Pct(-delta));
-        theme.reset(out);
-    }
 }
 
-fn write_borrow_row(out: &mut String, pace: &Pace, theme: &Theme) {
+fn write_next_days_row(out: &mut String, pace: &Pace, theme: &Theme) {
     for _ in 0..LABEL_WIDTH {
         out.push(' ');
     }
     out.push_str("  ");
-    theme.start_color(out, Accent::Cyan);
-    let _ = write!(out, "+{}% borrowed", Pct(pace.credit_bp));
-    theme.reset(out);
-    theme.write_faint(out, " · ");
-    theme.start_color(out, Accent::Muted);
-    let _ = write!(out, "allowance {}% of weekly", Pct(pace.ceiling_bp));
-    theme.reset(out);
+    if pace.days_after > 0 {
+        theme.start_color(out, Accent::Muted);
+        let _ = write!(
+            out,
+            "next {} days {}%/day",
+            pace.days_after,
+            Pct(pace.future_per_day_bp)
+        );
+        theme.reset(out);
+        if pace.credit_bp > 0 {
+            theme.write_faint(out, " · ");
+            theme.start_color(out, Accent::Cyan);
+            let _ = write!(out, "+{}% borrowed", Pct(pace.credit_bp));
+            theme.reset(out);
+        }
+    } else {
+        theme.write_dim(out, "last day of the week");
+    }
 }
 
 fn write_bar(out: &mut String, bp: i64, cells: usize, theme: &Theme, accent: Accent) {
@@ -207,13 +203,16 @@ mod tests {
 
     fn pace() -> Pace {
         Pace {
-            day: 4,
+            day: 3,
             week_days: 7,
             used_bp: 6_000,
-            allowance_bp: 5_716,
+            base_cap_bp: 6_800,
             credit_bp: 2_000,
-            ceiling_bp: 7_716,
-            over: false,
+            ceiling_bp: 8_800,
+            left_bp: 2_800,
+            days_after: 4,
+            future_per_day_bp: 1_000,
+            exhausted: false,
             next_epoch: 2_000,
             window_end: 3_000,
         }
@@ -240,10 +239,10 @@ mod tests {
         assert!(out.contains("5-hour"));
         assert!(out.contains("weekly"));
         assert!(out.contains("today"));
-        assert!(out.contains("77.76%"));
-        assert!(out.contains("17.16% left of weekly"));
+        assert!(out.contains("28% left"));
+        assert!(out.contains("next 4 days 10%/day"));
         assert!(out.contains("+20% borrowed"));
-        assert!(out.contains("allowance 77.16% of weekly"));
+        assert!(!out.contains("extra of weekly"));
         assert!(out.contains("resets in 33m"));
         assert!(!out.contains('\x1b'));
     }

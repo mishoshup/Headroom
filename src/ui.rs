@@ -7,8 +7,8 @@ use crossterm::{
 use std::io::{self, IsTerminal, Write};
 
 use crate::config::{pct_to_bp, Config};
-use crate::credit::{self, Applied, Scope};
-use crate::pace::Pace;
+use crate::credit::{self, Applied};
+use crate::pace::{Pace, BP_MAX};
 use crate::state::State;
 use crate::style::{Accent, Theme};
 use crate::util::{duration, format_pct, unix_now};
@@ -18,7 +18,6 @@ const LABEL_WIDTH: usize = 12;
 
 #[derive(Clone, Copy)]
 enum Slot {
-    Fix(i64),
     Preset(i64),
     Custom,
     Clear,
@@ -48,14 +47,11 @@ impl Drop for Screen {
 struct Panel<'a> {
     cfg: &'a Config,
     theme: Theme,
+    state: State,
     base: Pace,
-    reset: i64,
-    used_bp: i64,
-    existing_bp: i64,
-    existing_scope: Option<Scope>,
     now: u64,
+    existing_bp: i64,
     selected: usize,
-    week: bool,
     input: Option<String>,
     error: Option<String>,
 }
@@ -66,30 +62,21 @@ pub fn run(cfg: &Config) -> Result<Option<String>, String> {
     }
 
     let now = unix_now();
-    let state = State::load(&cfg.state)
+    let mut state = State::load(&cfg.state)
         .ok_or("no usage snapshot yet; start Claude Code once so the statusline can capture it")?;
-    let week = state
-        .seven_day
-        .ok_or("the weekly window is not exposed for this account")?;
-    let reset = week
-        .resets_at
-        .ok_or("the snapshot has no weekly reset time")?;
-    let base = Pace::compute(cfg, week.used_bp, reset, now, 0)
-        .ok_or("the weekly window has already rolled over; wait for the next statusline tick")?;
-    let (existing_bp, existing) = credit::active_bp(cfg, now, reset, base.day);
-    let existing_scope = existing.map(|c| c.scope);
+    crate::pace::refresh_state(&mut state, cfg.week_days, now);
+    let base = Pace::compute(cfg, &state, now, 0)
+        .ok_or("the weekly window is not available in the snapshot; run headroom doctor")?;
+    let (existing_bp, _) = credit::active_bp(cfg, now, base.window_end, base.day);
 
     let mut panel = Panel {
         cfg,
         theme: Theme::new(cfg.color, cfg.ascii),
+        state,
         base,
-        reset,
-        used_bp: week.used_bp,
-        existing_bp,
-        existing_scope,
         now,
+        existing_bp,
         selected: 0,
-        week: existing_scope == Some(Scope::Week),
         input: None,
         error: None,
     };
@@ -163,13 +150,9 @@ impl Panel<'_> {
                     self.selected = (self.selected + 1) % count;
                     self.error = None;
                 }
-                KeyCode::Char('w') => {
-                    self.week = !self.week;
-                    self.error = None;
-                }
                 KeyCode::Char('c') => return self.clear(),
                 KeyCode::Enter => match self.selected_slot() {
-                    Some(Slot::Fix(bp)) | Some(Slot::Preset(bp)) => {
+                    Some(Slot::Preset(bp)) => {
                         if let Some(message) = self.borrow(bp)? {
                             return Ok(Some(message));
                         }
@@ -188,17 +171,12 @@ impl Panel<'_> {
 
     fn slots(&self) -> Vec<Slot> {
         let mut slots = Vec::new();
-        let fix = self.fix_bp();
-        if let Some(fix) = fix {
-            slots.push(Slot::Fix(fix));
-        }
-        for preset in PRESETS {
-            if fix == Some(preset) {
-                continue;
+        if self.max_add_bp() > 0 {
+            for preset in PRESETS {
+                slots.push(Slot::Preset(preset));
             }
-            slots.push(Slot::Preset(preset));
+            slots.push(Slot::Custom);
         }
-        slots.push(Slot::Custom);
         slots.push(Slot::Clear);
         slots.push(Slot::Quit);
         slots
@@ -208,39 +186,25 @@ impl Panel<'_> {
         self.slots().get(self.selected).copied()
     }
 
+    fn max_add_bp(&self) -> i64 {
+        (BP_MAX - self.base.base_cap_bp - self.existing_bp).max(0)
+    }
+
     fn ceiling_bp(&self) -> i64 {
-        (self.base.ceiling_bp + self.existing_bp).clamp(0, 10_000)
+        (self.base.base_cap_bp + self.existing_bp).clamp(0, BP_MAX)
     }
 
-    fn over_bp(&self) -> i64 {
-        (self.used_bp - self.ceiling_bp()).max(0)
-    }
-
-    /// Smallest whole-percent borrow that gets back under, plus one point of
-    /// headroom. Capped at the remaining weekly room.
-    fn fix_bp(&self) -> Option<i64> {
-        let over = self.over_bp();
-        if over <= 0 {
-            return None;
-        }
-        let room = 10_000 - self.existing_bp;
-        if room <= 0 {
-            return None;
-        }
-        let whole = ((over + 99) / 100) * 100;
-        Some((whole + 100).clamp(1, room))
+    fn left_bp(&self) -> i64 {
+        (self.ceiling_bp() - self.base.used_bp).max(0)
     }
 
     fn outcome(&self, add_bp: i64) -> (i64, i64) {
-        let total = (self.existing_bp + add_bp).clamp(0, 10_000);
-        let limit = (self.base.ceiling_bp + total).clamp(0, 10_000);
-        (limit, self.used_bp - limit)
+        let ceiling = (self.ceiling_bp() + add_bp).clamp(0, BP_MAX);
+        (ceiling, (ceiling - self.base.used_bp).max(0))
     }
 
     fn borrow(&mut self, add_bp: i64) -> Result<Option<String>, String> {
-        match credit::apply(
-            self.cfg, self.now, self.reset, &self.base, add_bp, self.week, None,
-        ) {
+        match credit::apply(self.cfg, &self.state, self.now, add_bp, None) {
             Ok(applied) => Ok(Some(self.applied_message(applied))),
             Err(err) => {
                 self.error = Some(err);
@@ -251,49 +215,38 @@ impl Panel<'_> {
 
     fn clear(&mut self) -> Result<Option<String>, String> {
         credit::Credit::clear(&self.cfg.credit)
-            .map_err(|e| format!("could not clear the override: {e}"))?;
+            .map_err(|e| format!("could not clear the borrow: {e}"))?;
         Ok(Some(
-            "headroom: override cleared; the normal daily pace applies again.".into(),
+            "headroom: borrow cleared; today's normal allowance applies again.".into(),
         ))
     }
 
     fn applied_message(&self, applied: Applied) -> String {
-        let previous = self.ceiling_bp();
-        let delta = self.used_bp - applied.ceiling_bp;
-        let scope_text = match applied.scope {
-            Scope::Week => "the rest of the weekly window",
-            Scope::Day => "today",
-        };
         let mut out = format!(
-            "headroom: added +{}% for {scope_text}",
+            "headroom: added +{}% for today",
             format_pct(applied.added_bp)
         );
         if applied.total_bp != applied.added_bp {
             out.push_str(&format!(
-                " (total +{}% borrowed).\n",
+                " (total +{}% borrowed)",
                 format_pct(applied.total_bp)
             ));
-        } else {
-            out.push_str(".\n");
         }
         out.push_str(&format!(
-            "today's limit: {}% -> {}%.\n",
-            format_pct(previous),
-            format_pct(applied.ceiling_bp)
+            ".\n{}% left today.\n",
+            format_pct(applied.left_bp)
         ));
-        if delta > 0 {
+        if applied.days_after > 0 {
             out.push_str(&format!(
-                "You are still {}% over today.\n",
-                format_pct(delta)
+                "next {} days {}%/day.\n",
+                applied.days_after,
+                format_pct(applied.future_per_day_bp)
             ));
         } else {
-            out.push_str(&format!(
-                "You now have {}% left today.\n",
-                format_pct(-delta)
-            ));
+            out.push_str("last day of the week.\n");
         }
         out.push_str(&format!(
-            "Expires in {}.",
+            "expires in {}.",
             duration(applied.expires_at - self.now as i64)
         ));
         out
@@ -303,29 +256,7 @@ impl Panel<'_> {
         self.input
             .as_deref()
             .and_then(pct_to_bp)
-            .filter(|bp| *bp > 0 && *bp <= 10_000)
-    }
-
-    fn effective_week(&self) -> bool {
-        self.week || self.existing_scope == Some(Scope::Week)
-    }
-
-    fn expiry(&self) -> i64 {
-        if self.effective_week() {
-            self.reset
-        } else {
-            self.base.next_epoch
-        }
-    }
-
-    fn section_title(&self) -> String {
-        if self.over_bp() > 0 {
-            "Borrow to get back under today's limit".into()
-        } else if self.week {
-            "Borrow extra for the rest of the week".into()
-        } else {
-            "Borrow extra for today".into()
-        }
+            .filter(|bp| *bp > 0 && *bp <= BP_MAX)
     }
 
     fn draw(&self, out: &mut impl Write) -> io::Result<()> {
@@ -339,58 +270,59 @@ impl Panel<'_> {
             "─".repeat(width.saturating_sub(2))
         };
         let cells = width.saturating_sub(38).clamp(12, 20);
-        let delta = self.used_bp - self.ceiling_bp();
+        let left = self.left_bp();
+        let used = self.base.used_bp;
 
         let mut lines: Vec<String> = Vec::new();
         lines.push(format!(
             "{}  {}",
             self.theme.bold_color(Accent::Cyan, "Headroom"),
-            self.theme.dim("borrow extra headroom")
+            self.theme.dim("borrow from the rest of the week")
         ));
 
-        let mut verdict = if delta > 0 {
-            self.theme.color(
-                Accent::Red,
-                &format!("You are {}% over today's limit.", format_pct(delta)),
-            )
-        } else {
+        let verdict = if left > 0 {
             self.theme.color(
                 Accent::Green,
-                &format!("You have {}% left today.", format_pct(-delta)),
+                &format!("You have {}% left today.", format_pct(left)),
             )
+        } else {
+            self.theme.color(Accent::Red, "Today's allowance is used.")
         };
-        verdict.push_str(
-            &self
-                .theme
-                .dim(&format!("  Weekly usage is {}%.", format_pct(self.used_bp))),
-        );
-        lines.push(verdict);
+        lines.push(format!(
+            "{verdict}  {}",
+            self.theme
+                .dim(&format!("Weekly usage is {}%.", format_pct(used)))
+        ));
         lines.push(self.theme.faint(&rule));
 
         lines.push(self.metric_row(
             "weekly used",
-            self.used_bp,
-            format!("{}%", format_pct(self.used_bp)),
+            used,
+            format!("{}%", format_pct(used)),
             Some(format!(
                 "resets in {}",
-                duration(self.reset - self.now as i64)
+                duration(
+                    self.state
+                        .seven_day
+                        .and_then(|window| window.resets_at)
+                        .map(|reset| reset - self.now as i64)
+                        .unwrap_or(0)
+                )
             )),
             None,
             cells,
         ));
-        let ratio =
-            (self.used_bp.saturating_mul(10_000) / self.ceiling_bp().max(1)).clamp(0, 10_000);
-        let today_detail = if delta > 0 {
-            format!("{}% over", format_pct(delta))
+        let ratio = if self.ceiling_bp() > 0 {
+            used.saturating_mul(10_000) / self.ceiling_bp()
         } else {
-            format!("{}% left", format_pct(-delta))
+            0
         };
         lines.push(self.metric_row(
-            "today limit",
+            "today",
             ratio,
-            format!("{}%", format_pct(self.ceiling_bp())),
-            Some(today_detail),
-            Some(if delta > 0 {
+            format!("{}%", format_pct(left)),
+            Some("left".into()),
+            Some(if left == 0 {
                 Accent::Red
             } else {
                 Accent::Green
@@ -398,31 +330,44 @@ impl Panel<'_> {
             cells,
         ));
 
+        let next = if self.base.days_after > 0 {
+            format!(
+                "{} days · {}%/day",
+                self.base.days_after,
+                format_pct(self.base.future_per_day_bp)
+            )
+        } else {
+            "last day of the week".into()
+        };
+        let mut next_line = format!(
+            "{}  {}",
+            self.theme.dim(&format!("{:<LABEL_WIDTH$}", "next days")),
+            self.theme.dim(&next)
+        );
         if self.existing_bp > 0 {
-            let scope = if self.effective_week() {
-                "rest of week"
-            } else {
-                "today"
-            };
-            lines.push(format!(
-                "{}  {}  {}",
-                self.theme.dim(&format!("{:<LABEL_WIDTH$}", "borrowed")),
-                self.theme
-                    .color(Accent::Cyan, &format!("+{}%", format_pct(self.existing_bp))),
-                self.theme.dim(&format!(
-                    "for {scope}, expires in {}",
-                    duration(self.expiry() - self.now as i64)
-                ))
+            next_line.push_str(&format!(
+                " {} {}",
+                self.theme.faint("·"),
+                self.theme.color(
+                    Accent::Cyan,
+                    &format!("+{}% borrowed", format_pct(self.existing_bp))
+                )
             ));
         }
+        lines.push(next_line);
 
         lines.push(String::new());
-        lines.push(self.theme.bold(&self.section_title()));
+        let title = if self.max_add_bp() > 0 {
+            "Borrow from the rest of the week"
+        } else {
+            "No future budget left to borrow"
+        };
+        lines.push(self.theme.bold(title));
 
         if let Some(input) = &self.input {
             lines.push(format!(
                 "{}  {}",
-                self.theme.dim("Extra percent:"),
+                self.theme.dim("Borrow percent:"),
                 self.theme.bold_color(
                     Accent::Cyan,
                     &format!("{}%", if input.is_empty() { "…" } else { input })
@@ -431,7 +376,6 @@ impl Panel<'_> {
         } else {
             for (index, slot) in self.slots().iter().enumerate() {
                 lines.push(match slot {
-                    Slot::Fix(bp) => self.fix_row(index, *bp),
                     Slot::Preset(bp) => self.preset_row(index, *bp),
                     Slot::Custom => self.simple_row(index, "custom amount…", false),
                     Slot::Clear => {
@@ -445,31 +389,28 @@ impl Panel<'_> {
         lines.push(String::new());
         if let Some(error) = &self.error {
             lines.push(self.theme.color(Accent::Red, error));
-        } else if let Some(bp) = self.input.as_ref().and_then(|_| self.input_bp()) {
-            lines.push(self.preview(bp));
         } else if self.input.is_some() {
+            if let Some(bp) = self.input_bp() {
+                lines.push(self.preview(bp));
+            } else {
+                lines.push(self.theme.dim("Type a percentage between 0 and 100."));
+            }
+        } else if let Some(Slot::Preset(bp)) = self.selected_slot() {
+            lines.push(self.preview(bp));
+        } else if let Some(Slot::Clear) = self.selected_slot() {
             lines.push(
                 self.theme
-                    .dim("Type how many extra points you want, then press enter."),
+                    .dim("Removes the borrow; today's normal allowance applies again."),
             );
-        } else if let Some(slot) = self.selected_slot() {
-            match slot {
-                Slot::Fix(bp) | Slot::Preset(bp) => lines.push(self.preview(bp)),
-                Slot::Clear => lines.push(
-                    self.theme
-                        .dim("Removes the current borrow; the normal daily limit applies again."),
-                ),
-                _ => {}
-            }
         }
 
         lines.push(String::new());
         let footer = if self.input.is_some() {
             "enter confirm · esc cancel"
         } else if self.theme.ascii() {
-            "j/k choose · enter confirm · w scope · c clear · q quit"
+            "j/k choose · enter confirm · c clear · q quit"
         } else {
-            "↑/↓ choose · enter confirm · w scope · c clear · q quit"
+            "↑/↓ choose · enter confirm · c clear · q quit"
         };
         lines.push(self.theme.dim(footer));
 
@@ -481,19 +422,21 @@ impl Panel<'_> {
     }
 
     fn preview(&self, add_bp: i64) -> String {
-        let (limit, delta) = self.outcome(add_bp);
-        let tail = if delta > 0 {
-            self.theme
-                .color(Accent::Red, &format!("{}% over", format_pct(delta)))
+        let (_, left) = self.outcome(add_bp);
+        let next = if self.base.days_after > 0 {
+            format!(
+                "next {} days {}%/day",
+                self.base.days_after,
+                format_pct(self.base.future_per_day_bp)
+            )
         } else {
-            self.theme
-                .color(Accent::Green, &format!("{}% left", format_pct(-delta)))
+            "last day".into()
         };
         format!(
-            "Selected: add +{}%  →  limit {}%  ·  {tail}  ·  expires in {}",
+            "add +{}%  →  {}% left today  ·  {next}  ·  expires in {}",
             format_pct(add_bp),
-            format_pct(limit),
-            duration(self.expiry() - self.now as i64)
+            format_pct(left),
+            duration(self.base.next_epoch - self.now as i64)
         )
     }
 
@@ -520,65 +463,14 @@ impl Panel<'_> {
         out
     }
 
-    fn fix_row(&self, index: usize, add_bp: i64) -> String {
-        let selected = self.selected == index;
-        let (limit, delta) = self.outcome(add_bp);
-        let tag = if delta <= 0 {
-            "gets you under"
-        } else {
-            "largest available"
-        };
-        let detail = if delta > 0 {
-            format!(
-                "→ limit {}% · still {}% over",
-                format_pct(limit),
-                format_pct(delta)
-            )
-        } else {
-            format!(
-                "→ limit {}% · {}% left",
-                format_pct(limit),
-                format_pct(-delta)
-            )
-        };
-        let label = format!("+{}%", format_pct(add_bp));
-        if selected {
-            format!(
-                "{} {}   {}   {}",
-                self.theme.color(Accent::Cyan, "▸"),
-                self.theme.bold_color(Accent::Cyan, &format!("{label:<6}")),
-                self.theme.color(Accent::Yellow, tag),
-                self.theme.dim(&detail)
-            )
-        } else {
-            format!(
-                "  {label:<6}  {}  {}",
-                self.theme.color(Accent::Yellow, tag),
-                self.theme.dim(&detail)
-            )
-        }
-    }
-
     fn preset_row(&self, index: usize, add_bp: i64) -> String {
         let selected = self.selected == index;
-        let (limit, delta) = self.outcome(add_bp);
-        let detail = if delta > 0 {
-            format!(
-                "→ limit {}% · still {}% over",
-                format_pct(limit),
-                format_pct(delta)
-            )
-        } else {
-            format!(
-                "→ limit {}% · {}% left",
-                format_pct(limit),
-                format_pct(-delta)
-            )
-        };
+        let (_, left) = self.outcome(add_bp);
+        let detail = format!("today {}% left", format_pct(left));
         let label = format!("+{}%", format_pct(add_bp));
         if selected {
             format!(
-                "{} {}   {}",
+                "{} {}  {}",
                 self.theme.color(Accent::Cyan, "▸"),
                 self.theme.bold_color(Accent::Cyan, &format!("{label:<6}")),
                 self.theme.dim(&detail)

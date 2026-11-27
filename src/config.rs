@@ -27,9 +27,6 @@ pub struct Config {
     pub max_sleep: u64,
     pub pacing: bool,
     pub block_prompts: bool,
-    pub daily_bp: Option<i64>,
-    pub target_bp: i64,
-    pub grace_bp: i64,
     pub color: ColorMode,
     pub ascii: bool,
     pub bottom_margin: u32,
@@ -75,9 +72,6 @@ impl Config {
         let max_sleep = env_u64("HEADROOM_MAX_SLEEP", 19_800);
         let pacing = env_bool("HEADROOM_PACING", true);
         let block_prompts = env_bool("HEADROOM_BLOCK_PROMPTS", true);
-        let daily_bp = env_bp("HEADROOM_DAILY_PERCENT");
-        let target_bp = env_bp("HEADROOM_WEEKLY_TARGET").unwrap_or(10_000);
-        let grace_bp = env_bp("HEADROOM_PACING_GRACE").unwrap_or(0);
         let (color, ascii, bottom_margin) = if render {
             let color = detect_color();
             let ascii = env_bool("HEADROOM_ASCII", false)
@@ -99,20 +93,10 @@ impl Config {
             max_sleep,
             pacing,
             block_prompts,
-            daily_bp,
-            target_bp,
-            grace_bp,
             color,
             ascii,
             bottom_margin,
         }
-    }
-
-    pub fn daily_bp(&self) -> i64 {
-        self.daily_bp.unwrap_or_else(|| {
-            let days = self.week_days as i64;
-            (self.target_bp + days / 2) / days
-        })
     }
 }
 
@@ -194,28 +178,5 @@ mod tests {
         assert_eq!(pct_to_bp(" 0.5 "), Some(50));
         assert_eq!(pct_to_bp("-1"), None);
         assert_eq!(pct_to_bp("junk"), None);
-    }
-
-    #[test]
-    fn default_daily_is_rounded() {
-        let cfg = Config {
-            state: PathBuf::new(),
-            credit: PathBuf::new(),
-            week_days: 7,
-            stale_after: 900,
-            five_limit_bp: 9800,
-            five_mode: FiveMode::Block,
-            reset_buffer: 60,
-            max_sleep: 19800,
-            pacing: true,
-            block_prompts: true,
-            daily_bp: None,
-            target_bp: 10_000,
-            grace_bp: 0,
-            color: ColorMode::None,
-            ascii: false,
-            bottom_margin: 1,
-        };
-        assert_eq!(cfg.daily_bp(), 1429);
     }
 }

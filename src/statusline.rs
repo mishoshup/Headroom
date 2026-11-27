@@ -4,7 +4,7 @@ use std::io::Read;
 
 use crate::config::Config;
 use crate::credit;
-use crate::pace::Pace;
+use crate::pace::{self, Pace};
 use crate::render::{self, Snapshot, WindowView};
 use crate::state::{State, Window};
 use crate::style::Theme;
@@ -97,28 +97,31 @@ pub fn run(cfg: &Config) -> String {
         cfg.stale_after,
     );
 
-    let state = State {
+    let mut state = State {
         captured_at: now,
         five_hour: five,
         seven_day: week,
+        ..State::default()
     };
+    pace::refresh_state(&mut state, cfg.week_days, now);
     let _ = state.save(&cfg.state);
 
-    let pace = week.and_then(|w| {
-        let reset = w.resets_at?;
-        let base = Pace::compute(cfg, w.used_bp, reset, now, 0)?;
-        let (extra, _) = credit::active_bp(cfg, now, reset, base.day);
-        Pace::compute(cfg, w.used_bp, reset, now, extra)
-    });
+    let pace = match state.seven_day.and_then(|window| window.resets_at) {
+        Some(reset) => {
+            let (extra, _) = credit::active_bp(cfg, now, reset, state.day);
+            Pace::compute(cfg, &state, now, extra)
+        }
+        None => None,
+    };
 
     let snapshot = Snapshot {
         model,
         ctx_bp,
-        five: five.map(|w| WindowView {
+        five: state.five_hour.map(|w| WindowView {
             used_bp: w.used_bp,
             resets_at: w.resets_at,
         }),
-        week: week.map(|w| WindowView {
+        week: state.seven_day.map(|w| WindowView {
             used_bp: w.used_bp,
             resets_at: w.resets_at,
         }),
